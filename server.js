@@ -10,6 +10,7 @@ const HOST = process.env.HOST || "0.0.0.0";
 const UPSTREAM = "https://opencode.ai/zen/v1";
 const UPSTREAM_KEY = process.env.OPENCODE_API_KEY || ""; // optional; unlocks the full catalog
 const PROXY_KEY = process.env.PROXY_KEY || ""; // if set, clients must send matching Bearer
+const TUNNEL_URL = process.env.TUNNEL_URL || ""; // Cloudflare tunnel URL if active
 
 // CSRF token management
 const validTokens = new Set();
@@ -417,6 +418,7 @@ const server = http.createServer(async (req, res) => {
         service: "zen-proxy",
         upstream: UPSTREAM,
         upstream_auth: UPSTREAM_KEY ? "key-set" : "anonymous",
+        tunnel_url: TUNNEL_URL || null,
         models: AUTO_FALLBACK_CHAIN,
         endpoints: [
           "/v1/models",

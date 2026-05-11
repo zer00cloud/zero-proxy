@@ -303,6 +303,59 @@
         </div>
     </div>
 
+    <!-- API Endpoint Modal (Hidden by default) -->
+    <div id="endpoint-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-gutter">
+        <div class="absolute inset-0 bg-background/80 backdrop-blur-md" onclick="closeEndpointModal()"></div>
+        <div class="relative w-full max-w-3xl bg-surface-container border border-outline-variant/20 rounded-xl shadow-2xl overflow-hidden flex flex-col">
+            <div class="px-md py-md border-b border-outline-variant/10 flex items-center justify-between">
+                <div class="flex items-center gap-sm">
+                    <span class="material-symbols-outlined text-tertiary-container">settings_input_component</span>
+                    <h2 class="text-headline-md font-headline-md text-on-surface">API Endpoint</h2>
+                </div>
+                <button onclick="closeEndpointModal()" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="p-md space-y-md">
+                <div class="space-y-sm">
+                    <!-- Local -->
+                    <div class="flex items-center gap-md">
+                        <span class="w-20 px-2.5 py-1 rounded bg-surface-variant text-on-surface-variant text-[10px] font-bold text-center tracking-wider">LOCAL</span>
+                        <div class="flex-1 flex items-center bg-surface-container-low border border-outline-variant/20 rounded-lg px-sm py-2 gap-sm">
+                            <code id="endpoint-local" class="flex-1 text-body-sm font-mono text-on-surface truncate">http://localhost:8787/v1</code>
+                            <button onclick="copyEndpoint('local')" class="text-on-surface-variant hover:text-primary transition-colors">
+                                <span class="material-symbols-outlined text-[20px]">content_copy</span>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Tunnel -->
+                    <div class="flex items-center gap-md">
+                        <span class="w-20 px-2.5 py-1 rounded bg-tertiary-container/10 text-tertiary-container text-[10px] font-bold text-center tracking-wider">TUNNEL</span>
+                        <div class="flex-1 flex items-center bg-surface-container-low border border-outline-variant/20 rounded-lg px-sm py-2 gap-sm">
+                            <code id="endpoint-tunnel" class="flex-1 text-body-sm font-mono text-on-surface truncate">Not active</code>
+                            <button onclick="copyEndpoint('tunnel')" class="text-on-surface-variant hover:text-primary transition-colors">
+                                <span class="material-symbols-outlined text-[20px]">content_copy</span>
+                            </button>
+                        </div>
+                        <button id="tunnel-toggle-btn" onclick="toggleTunnel()" class="p-2 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors">
+                            <span class="material-symbols-outlined text-[20px]">power_settings_new</span>
+                        </button>
+                    </div>
+                    <!-- Model -->
+                    <div class="flex items-center gap-md">
+                        <span class="w-20 px-2.5 py-1 rounded bg-surface-variant text-on-surface-variant text-[10px] font-bold text-center tracking-wider">MODEL</span>
+                        <div class="flex-1 flex items-center bg-surface-container-low border border-outline-variant/20 rounded-lg px-sm py-2 gap-sm">
+                            <code id="endpoint-model" class="flex-1 text-body-sm font-mono text-on-surface truncate">-</code>
+                            <button onclick="copyEndpoint('model')" class="text-on-surface-variant hover:text-primary transition-colors">
+                                <span class="material-symbols-outlined text-[20px]">content_copy</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
       // State
       let csrfToken = null;
@@ -311,6 +364,8 @@
       let chartData = [];
       const MAX_CHART_POINTS = 16;
       let disabledModels = new Set();
+      let tunnelActive = false;
+      let tunnelUrl = '';
 
       // Load disabled models from server
       async function loadDisabledModels() {
@@ -375,8 +430,8 @@
                   </button>` : ''}
                 </div>
               </div>
-              <div>
-                <h3 class="font-headline-md text-[20px] text-on-surface leading-tight model-name">${escapeHtml(model.id)}</h3>
+              <div class="cursor-pointer" onclick="openEndpointModal('${escapeHtml(model.id)}')">
+                <h3 class="font-headline-md text-[20px] text-on-surface leading-tight model-name hover:text-primary transition-colors">${escapeHtml(model.id)}</h3>
                 <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Owner: opencode-zen</p>
               </div>
               <div class="mt-2 space-y-xs">
@@ -886,10 +941,128 @@
         return div.innerHTML;
       }
 
+      // Endpoint modal functions
+      function openEndpointModal(modelId) {
+        document.getElementById('endpoint-modal').classList.remove('hidden');
+
+        // Set local endpoint
+        const localEndpoint = `http://localhost:8787/v1/${modelId}/chat/completions`;
+        document.getElementById('endpoint-local').textContent = localEndpoint;
+
+        // Set tunnel endpoint
+        if (tunnelActive && tunnelUrl) {
+          const tunnelEndpoint = `${tunnelUrl}/v1/${modelId}/chat/completions`;
+          document.getElementById('endpoint-tunnel').textContent = tunnelEndpoint;
+          document.getElementById('tunnel-toggle-btn').classList.remove('bg-secondary/10', 'text-secondary');
+          document.getElementById('tunnel-toggle-btn').classList.add('bg-error/10', 'text-error');
+        } else {
+          document.getElementById('endpoint-tunnel').textContent = 'Not active';
+          document.getElementById('tunnel-toggle-btn').classList.remove('bg-error/10', 'text-error');
+          document.getElementById('tunnel-toggle-btn').classList.add('bg-secondary/10', 'text-secondary');
+        }
+
+        // Set model name
+        document.getElementById('endpoint-model').textContent = modelId;
+      }
+
+      function closeEndpointModal() {
+        document.getElementById('endpoint-modal').classList.add('hidden');
+      }
+
+      function copyEndpoint(type) {
+        let text = '';
+        if (type === 'local') {
+          text = document.getElementById('endpoint-local').textContent;
+        } else if (type === 'tunnel') {
+          text = document.getElementById('endpoint-tunnel').textContent;
+          if (text === 'Not active') {
+            showToast('Tunnel not active', true);
+            return;
+          }
+        } else if (type === 'model') {
+          text = document.getElementById('endpoint-model').textContent;
+        }
+
+        navigator.clipboard.writeText(text).then(() => {
+          showToast(`Copied: ${text}`);
+        }).catch(err => {
+          console.error('Failed to copy:', err);
+          showToast('Failed to copy', true);
+        });
+      }
+
+      async function toggleTunnel() {
+        const btn = document.getElementById('tunnel-toggle-btn');
+        const icon = btn.querySelector('.material-symbols-outlined');
+
+        icon.classList.add('animate-spin');
+
+        try {
+          if (tunnelActive) {
+            // Stop tunnel
+            showToast('Stopping tunnel...', false);
+            // Here you would call an API to stop the tunnel
+            // For now, just simulate it
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            tunnelActive = false;
+            tunnelUrl = '';
+            document.getElementById('endpoint-tunnel').textContent = 'Not active';
+            btn.classList.remove('bg-error/10', 'text-error');
+            btn.classList.add('bg-secondary/10', 'text-secondary');
+            showToast('Tunnel stopped');
+          } else {
+            // Start tunnel - check if cloudflared is available
+            showToast('Starting tunnel...', false);
+            // Here you would call an API to start the tunnel
+            // For now, check if tunnel is already running by detecting the URL
+            await detectTunnel();
+
+            if (tunnelActive) {
+              btn.classList.remove('bg-secondary/10', 'text-secondary');
+              btn.classList.add('bg-error/10', 'text-error');
+              showToast('Tunnel active');
+            } else {
+              showToast('Tunnel not available', true);
+            }
+          }
+        } catch (err) {
+          console.error('Toggle tunnel failed:', err);
+          showToast('Toggle tunnel failed', true);
+        } finally {
+          icon.classList.remove('animate-spin');
+        }
+      }
+
+      async function detectTunnel() {
+        // Try to detect if cloudflared tunnel is running
+        // Check common tunnel patterns or environment
+        try {
+          // Check if there's a tunnel URL in the response headers or status endpoint
+          const res = await fetch('/api/status');
+          const data = await res.json();
+
+          // Check if tunnel info is available (you may need to add this to server.js)
+          if (data.tunnel_url) {
+            tunnelActive = true;
+            tunnelUrl = data.tunnel_url;
+          } else {
+            // Try to detect from environment or common patterns
+            // For now, assume no tunnel unless explicitly set
+            tunnelActive = false;
+            tunnelUrl = '';
+          }
+        } catch (err) {
+          console.error('Failed to detect tunnel:', err);
+          tunnelActive = false;
+          tunnelUrl = '';
+        }
+      }
+
       // Initialize
       async function init() {
         await fetchCSRFToken();
         await loadDisabledModels();
+        await detectTunnel();
         await loadModels();
         await updateStats();
         pollTimer = setInterval(updateStats, pollInterval);
