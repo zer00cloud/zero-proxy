@@ -151,7 +151,18 @@
 
     <script>
         // CSRF token
-        const csrfToken = crypto.randomUUID();
+        let csrfToken = null;
+
+        // Fetch CSRF token from server
+        async function fetchCSRFToken() {
+            try {
+                const res = await fetch('/api/csrf-token');
+                const data = await res.json();
+                csrfToken = data.token;
+            } catch (err) {
+                console.error('Failed to fetch CSRF token:', err);
+            }
+        }
 
         // Adaptive polling state
         let pollInterval = 10000; // Default 10s
@@ -450,9 +461,14 @@
         });
 
         // Initialize
-        loadModels();
-        updateStats();
-        statsTimer = setInterval(updateStats, pollInterval);
+        async function init() {
+            await fetchCSRFToken();
+            loadModels();
+            updateStats();
+            statsTimer = setInterval(updateStats, pollInterval);
+        }
+
+        init();
     </script>
 </body>
 </html>

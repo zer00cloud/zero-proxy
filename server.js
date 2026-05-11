@@ -9,6 +9,22 @@ const UPSTREAM = "https://opencode.ai/zen/v1";
 const UPSTREAM_KEY = process.env.OPENCODE_API_KEY || ""; // optional; unlocks the full catalog
 const PROXY_KEY = process.env.PROXY_KEY || ""; // if set, clients must send matching Bearer
 
+// CSRF token management
+const validTokens = new Set();
+
+function generateCSRFToken() {
+  const token = crypto.randomUUID();
+  validTokens.add(token);
+  // Token expires after 1 hour
+  setTimeout(() => validTokens.delete(token), 3600000);
+  return token;
+}
+
+function validateCSRF(req) {
+  const token = req.headers['x-csrf-token'];
+  return token && validTokens.has(token);
+}
+
 function log(...a) {
   console.log(new Date().toISOString(), ...a);
 }
@@ -218,6 +234,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/stats") {
       return json(res, 200, statsTracker.getStats());
     }
+    if (req.method === "GET" && url.pathname === "/api/csrf-token") {
+      return json(res, 200, { token: generateCSRFToken() });
+    }
     if (req.method === "GET" && (url.pathname === "/v1/models" || url.pathname === "/models")) {
       return handleModels(res);
     }
@@ -258,6 +277,10 @@ const server = http.createServer(async (req, res) => {
       req.method === "POST" &&
       (url.pathname === "/v1/chat/completions" || url.pathname === "/chat/completions")
     ) {
+      // Validate CSRF token for dashboard requests
+      if (!validateCSRF(req)) {
+        return json(res, 403, { error: { message: "CSRF token required" } });
+      }
       return await handleChatCompletions(req, res);
     }
     json(res, 404, { error: { message: `no route: ${req.method} ${url.pathname}` } });
