@@ -14,7 +14,150 @@
           "tokens": 94
         }
       }
+    },
+    {
+      "timestamp": 1778509080000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        4148
+      ],
+      "tokens": 221,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 221
+        }
+      }
+    },
+    {
+      "timestamp": 1778509620000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        15172
+      ],
+      "tokens": 851,
+      "models": {
+        "big-pickle": {
+          "count": 1,
+          "tokens": 851
+        }
+      }
+    },
+    {
+      "timestamp": 1778511840000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        6262
+      ],
+      "tokens": 150,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 150
+        }
+      }
+    },
+    {
+      "timestamp": 1778511900000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        6152
+      ],
+      "tokens": 158,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 158
+        }
+      }
+    },
+    {
+      "timestamp": 1778512440000,
+      "count": 17,
+      "errors": 14,
+      "latencies": [
+        4508,
+        192,
+        190,
+        193,
+        8466,
+        191,
+        190,
+        8875,
+        192,
+        191,
+        190,
+        190,
+        191,
+        189,
+        1051,
+        675,
+        629
+      ],
+      "tokens": 302,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 3,
+          "tokens": 302
+        },
+        "kimi-k2.5-free": {
+          "count": 2,
+          "tokens": 0
+        },
+        "glm-4.7-free": {
+          "count": 2,
+          "tokens": 0
+        },
+        "qwen3.6-plus-free": {
+          "count": 2,
+          "tokens": 0
+        },
+        "hy3-preview-free": {
+          "count": 1,
+          "tokens": 0
+        },
+        "mimo-v2-flash-free": {
+          "count": 3,
+          "tokens": 0
+        },
+        "grok-code": {
+          "count": 1,
+          "tokens": 0
+        },
+        "ling-2.6-flash-free": {
+          "count": 1,
+          "tokens": 0
+        },
+        "ring-2.6-1t-free": {
+          "count": 1,
+          "tokens": 0
+        },
+        "trinity-large-preview-free": {
+          "count": 1,
+          "tokens": 0
+        }
+      }
+    },
+    {
+      "timestamp": 1778512500000,
+      "count": 2,
+      "errors": 0,
+      "latencies": [
+        4494,
+        8284
+      ],
+      "tokens": 139,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 2,
+          "tokens": 139
+        }
+      }
     }
   ],
-  "lastUpdated": 1778505588281
+  "lastUpdated": 1778512527781
 }

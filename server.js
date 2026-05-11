@@ -53,6 +53,13 @@ function authOk(req) {
   return h === `Bearer ${PROXY_KEY}`;
 }
 
+// Extract provider name from model ID
+function getProvider(modelId) {
+  // Extract the part before the first dash, or use full name if no dash
+  const match = modelId.match(/^([^-]+)/);
+  return match ? match[1] : modelId;
+}
+
 // Call upstream once with a given model. Returns { status, headers, body }.
 async function callUpstream(path, payload, extraHeaders = {}) {
   const headers = {
@@ -187,6 +194,83 @@ async function handleChatCompletions(req, res) {
   res.end(r.body);
 }
 
+// Handle model-specific endpoint (no fallback)
+async function handleModelSpecificRequest(req, res, modelId) {
+  const startTime = Date.now();
+  const raw = await readBody(req);
+  let payload;
+  try {
+    payload = JSON.parse(raw || "{}");
+  } catch {
+    return json(res, 400, { error: { message: "invalid JSON body" } });
+  }
+
+  // Override model with the one from URL
+  payload.model = modelId;
+
+  if (payload.stream) {
+    const headers = { "Content-Type": "application/json" };
+
+    // Check if model has a saved API key
+    const modelApiKey = apiKeyManager.getKey(modelId);
+    if (modelApiKey) {
+      headers["Authorization"] = `Bearer ${modelApiKey}`;
+    } else if (UPSTREAM_KEY) {
+      headers["Authorization"] = `Bearer ${UPSTREAM_KEY}`;
+    }
+
+    const upstream = await fetch(`${UPSTREAM}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+    res.writeHead(upstream.status, {
+      "Content-Type": upstream.headers.get("content-type") || "text/event-stream",
+      "Access-Control-Allow-Origin": "*",
+    });
+    if (upstream.body) {
+      const reader = upstream.body.getReader();
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+    }
+    res.end();
+    const latency = Date.now() - startTime;
+    log(`stream ${modelId} -> ${upstream.status}`);
+
+    statsTracker.recordRequest(modelId, latency, upstream.status, 0);
+    return;
+  }
+
+  // Non-streaming: call upstream directly (no fallback)
+  const r = await callUpstream("/chat/completions", payload);
+  const latency = Date.now() - startTime;
+  log(`chat ${modelId} -> ${r.status}`);
+
+  // Extract token usage
+  let tokens = 0;
+  try {
+    const responseData = JSON.parse(r.body);
+    if (responseData.usage?.total_tokens) {
+      tokens = responseData.usage.total_tokens;
+    }
+  } catch {
+    // Ignore parse errors
+  }
+
+  // Record stats
+  statsTracker.recordRequest(modelId, latency, r.status, tokens);
+
+  res.writeHead(r.status, {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "X-Zen-Proxy-Model": modelId,
+  });
+  res.end(r.body);
+}
+
 function handleModels(res) {
   const data = FREE_MODELS.map((m) => ({
     id: m.id,
@@ -220,7 +304,11 @@ const server = http.createServer(async (req, res) => {
         upstream: UPSTREAM,
         upstream_auth: UPSTREAM_KEY ? "key-set" : "anonymous",
         models: AUTO_FALLBACK_CHAIN,
-        endpoints: ["/v1/models", "/v1/chat/completions"],
+        endpoints: [
+          "/v1/models",
+          "/v1/chat/completions",
+          ...FREE_MODELS.map(m => `/v1/${getProvider(m.id)}/chat/completions`)
+        ],
       });
     }
     if (req.method === "GET" && url.pathname === "/dashboard") {
@@ -242,7 +330,11 @@ const server = http.createServer(async (req, res) => {
         upstream: UPSTREAM,
         upstream_auth: UPSTREAM_KEY ? "key-set" : "anonymous",
         models: AUTO_FALLBACK_CHAIN,
-        endpoints: ["/v1/models", "/v1/chat/completions"],
+        endpoints: [
+          "/v1/models",
+          "/v1/chat/completions",
+          ...FREE_MODELS.map(m => `/v1/${getProvider(m.id)}/chat/completions`)
+        ],
       });
     }
     if (req.method === "GET" && url.pathname === "/api/stats") {
@@ -296,6 +388,24 @@ const server = http.createServer(async (req, res) => {
         return json(res, 403, { error: { message: "CSRF token required" } });
       }
       return await handleChatCompletions(req, res);
+    }
+    // Per-model endpoints: /v1/{provider}/chat/completions
+    if (req.method === "POST" && url.pathname.match(/^\/v1\/[^\/]+\/chat\/completions$/)) {
+      const provider = url.pathname.split('/')[2];
+
+      // Find model that matches this provider
+      const model = FREE_MODELS.find(m => getProvider(m.id) === provider);
+
+      if (!model) {
+        return json(res, 404, { error: { message: `Unknown provider: ${provider}` } });
+      }
+
+      // Validate CSRF token
+      if (!validateCSRF(req)) {
+        return json(res, 403, { error: { message: "CSRF token required" } });
+      }
+
+      return await handleModelSpecificRequest(req, res, model.id);
     }
     json(res, 404, { error: { message: `no route: ${req.method} ${url.pathname}` } });
   } catch (err) {

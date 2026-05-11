@@ -112,8 +112,8 @@
     </style>
 </head>
 <body class="bg-background text-on-background font-body-md min-h-screen flex flex-col">
-    <!-- TopNavBar Implementation -->
-    <header class="bg-surface-container border-b border-outline-variant/10 docked full-width top-0 z-50">
+    <!-- TopNavBar -->
+    <header class="bg-surface-container border-b border-outline-variant/10 sticky top-0 z-50">
         <div class="flex items-center w-full px-gutter h-16 max-w-7xl mx-auto justify-center">
             <div class="text-headline-md font-headline-md font-bold text-primary">ProxyZero</div>
         </div>
@@ -121,7 +121,7 @@
 
     <div class="flex flex-1 overflow-hidden">
         <!-- Main Content -->
-        <main class="flex-1 overflow-y-auto p-gutter lg:p-margin bg-background">
+        <main class="flex-1 overflow-y-auto p-gutter lg:p-margin bg-background pb-20 md:pb-0">
             <div class="mx-auto space-y-gutter max-w-7xl">
                 <!-- Monitoring Graph Section -->
                 <section class="bg-surface-container-low border border-outline-variant/10 rounded-xl overflow-hidden">
@@ -131,15 +131,17 @@
                             <p class="font-label-sm text-label-sm text-on-surface-variant">Real-time API traffic monitoring across global clusters</p>
                         </div>
                         <div class="flex gap-xs">
-                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-container/20 text-secondary text-xs font-semibold">
+                            <span id="live-indicator" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-container/20 text-secondary text-xs font-semibold">
                                 <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
                                 Live Sync
                             </span>
                         </div>
                     </div>
                     <div class="p-md h-64 relative">
-                        <!-- Chart Container -->
-                        <canvas id="chart" width="800" height="200" class="absolute inset-x-md bottom-md top-md"></canvas>
+                        <!-- 16-Model Chart -->
+                        <div id="model-chart" class="absolute inset-x-md bottom-md top-md flex items-end justify-between gap-2">
+                            <!-- Chart bars will be inserted here -->
+                        </div>
                         <div class="absolute inset-0 chart-gradient pointer-events-none"></div>
                         <div class="absolute inset-x-0 top-0 h-full flex flex-col justify-between py-md pointer-events-none opacity-10">
                             <div class="border-t border-on-surface"></div>
@@ -151,8 +153,8 @@
                 </section>
 
                 <!-- AI Models Cards Section -->
-                <div id="models-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-gutter">
-                    <!-- Cards will be dynamically loaded here -->
+                <div id="models-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-gutter">
+                    <!-- Model cards will be inserted here -->
                 </div>
 
                 <!-- Bottom Status Bar -->
@@ -162,7 +164,7 @@
                             <span class="material-symbols-outlined">hub</span>
                         </div>
                         <div>
-                            <div id="total-requests" class="text-[24px] font-bold text-on-surface">0</div>
+                            <div id="stat-total-requests" class="text-[24px] font-bold text-on-surface">0</div>
                             <div class="text-label-sm text-on-surface-variant">Total Requests</div>
                         </div>
                     </div>
@@ -171,7 +173,7 @@
                             <span class="material-symbols-outlined">speed</span>
                         </div>
                         <div>
-                            <div id="avg-latency" class="text-[24px] font-bold text-on-surface">0ms</div>
+                            <div id="stat-avg-latency" class="text-[24px] font-bold text-on-surface">0ms</div>
                             <div class="text-label-sm text-on-surface-variant">Avg Latency</div>
                         </div>
                     </div>
@@ -180,7 +182,7 @@
                             <span class="material-symbols-outlined">account_balance_wallet</span>
                         </div>
                         <div>
-                            <div id="total-tokens" class="text-[24px] font-bold text-on-surface">0</div>
+                            <div id="stat-tokens" class="text-[24px] font-bold text-on-surface">0</div>
                             <div class="text-label-sm text-on-surface-variant">Tokens Used</div>
                         </div>
                     </div>
@@ -189,7 +191,7 @@
                             <span class="material-symbols-outlined">warning</span>
                         </div>
                         <div>
-                            <div id="total-errors" class="text-[24px] font-bold text-on-surface">0</div>
+                            <div id="stat-errors" class="text-[24px] font-bold text-on-surface">0</div>
                             <div class="text-label-sm text-on-surface-variant">Errors</div>
                         </div>
                     </div>
@@ -218,81 +220,42 @@
         </button>
     </nav>
 
-    <!-- Test Modal (Hidden by default) -->
-    <div id="test-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-gutter">
-        <div class="absolute inset-0 bg-background/80 backdrop-blur-md" onclick="closeTestModal()"></div>
-        <div class="relative w-full max-w-3xl bg-surface-container border border-outline-variant/20 rounded-xl shadow-2xl overflow-hidden flex flex-col">
-            <div class="px-md py-md border-b border-outline-variant/10 flex items-center justify-between">
-                <div class="flex items-center gap-sm">
-                    <span class="material-symbols-outlined text-tertiary-container">settings_input_component</span>
-                    <h2 class="text-headline-md font-headline-md text-on-surface">Test Model</h2>
-                </div>
-                <button onclick="closeTestModal()" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors">
-                    <span class="material-symbols-outlined">close</span>
+    <!-- Test Modal -->
+    <div id="test-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-surface-container border border-outline-variant/10 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="px-md py-sm border-b border-outline-variant/10 flex justify-between items-center">
+                <h3 class="font-headline-md text-headline-md text-on-surface">Test Model: <span id="modal-model-name"></span></h3>
+                <button id="modal-close" class="p-2 hover:bg-surface-variant rounded-lg transition-colors">
+                    <span class="material-symbols-outlined text-on-surface-variant">close</span>
                 </button>
             </div>
-            <div class="p-md space-y-md">
-                <div class="space-y-xs">
-                    <label class="text-label-md font-label-md text-on-surface">Model</label>
-                    <input id="test-model" class="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg px-sm py-2 text-on-surface focus:outline-none focus:border-primary" type="text" readonly/>
+            <div class="p-md space-y-sm">
+                <div>
+                    <label class="block font-label-md text-label-md text-on-surface-variant mb-xs">Your Prompt</label>
+                    <textarea id="test-prompt" class="w-full px-sm py-sm bg-surface-container-high border border-outline-variant/20 rounded-lg text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none" rows="4" placeholder="Hello, who are you?">Hello, who are you?</textarea>
                 </div>
-                <div class="space-y-xs">
-                    <label class="text-label-md font-label-md text-on-surface">Prompt</label>
-                    <textarea id="test-prompt" class="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg px-sm py-2 text-on-surface focus:outline-none focus:border-primary" rows="3" placeholder="Enter your test prompt..."></textarea>
-                </div>
-                <div class="space-y-xs">
-                    <label class="text-label-md font-label-md text-on-surface">Response</label>
-                    <div id="test-result" class="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg px-sm py-2 text-on-surface min-h-[100px] max-h-[300px] overflow-y-auto"></div>
-                </div>
-                <div class="flex justify-end gap-sm pt-md border-t border-outline-variant/10">
-                    <button onclick="closeTestModal()" class="px-xl py-2.5 text-on-surface-variant font-bold text-label-md hover:text-on-surface transition-colors">Cancel</button>
-                    <button onclick="runTest()" class="px-xl py-2.5 bg-primary text-on-primary rounded-lg font-bold text-label-md hover:opacity-90 active:scale-95 transition-all">Run Test</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- API Key Modal (Hidden by default) -->
-    <div id="api-key-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-gutter">
-        <div class="absolute inset-0 bg-background/80 backdrop-blur-md" onclick="closeAPIKeyModal()"></div>
-        <div class="relative w-full max-w-xl bg-surface-container border border-outline-variant/20 rounded-xl shadow-2xl overflow-hidden flex flex-col">
-            <div class="px-md py-md border-b border-outline-variant/10 flex items-center justify-between">
-                <div class="flex items-center gap-sm">
-                    <span class="material-symbols-outlined text-primary">vpn_key</span>
-                    <h2 class="text-headline-md font-headline-md text-on-surface">API KEY</h2>
-                </div>
-                <button onclick="closeAPIKeyModal()" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors">
-                    <span class="material-symbols-outlined">close</span>
+                <button id="test-submit" class="w-full py-2.5 rounded-lg bg-primary text-on-primary font-bold font-label-md hover:opacity-90 active:scale-95 transition-all">
+                    Send Request
                 </button>
-            </div>
-            <div class="p-md space-y-md">
-                <div class="space-y-xs">
-                    <label class="text-label-md font-label-md text-on-surface">Name</label>
-                    <input id="api-key-name" class="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg px-sm py-2 text-on-surface focus:outline-none focus:border-primary" placeholder="Production Key" type="text"/>
+                <div id="test-loading" class="hidden text-center text-on-surface-variant">
+                    <span class="inline-block animate-spin material-symbols-outlined">progress_activity</span>
+                    <span class="ml-2 font-body-sm">Sending request...</span>
                 </div>
-                <div class="space-y-xs">
-                    <label class="text-label-md font-label-md text-on-surface">API Key</label>
-                    <div class="flex gap-sm">
-                        <input id="api-key-input" class="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-sm py-2 text-on-surface focus:outline-none focus:border-primary" type="password" placeholder="Enter API key..."/>
-                        <button onclick="checkAPIKey()" class="px-md py-2 bg-surface-container-high border border-outline-variant/20 rounded-lg text-on-surface font-label-md hover:bg-surface-variant transition-colors">Check</button>
-                    </div>
+                <div id="test-response" class="hidden">
+                    <label class="block font-label-md text-label-md text-on-surface-variant mb-xs">Response</label>
+                    <div id="test-response-content" class="px-sm py-sm bg-surface-container-high border border-outline-variant/20 rounded-lg text-on-surface font-body-sm whitespace-pre-wrap max-h-96 overflow-y-auto"></div>
                 </div>
-                <div class="space-y-xs">
-                    <label class="text-label-md font-label-md text-on-surface">Priority</label>
-                    <input id="api-key-priority" class="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg px-sm py-2 text-on-surface focus:outline-none focus:border-primary" type="number" value="1"/>
-                </div>
-                <div class="flex justify-end gap-sm mt-lg pt-md border-t border-outline-variant/10">
-                    <button onclick="closeAPIKeyModal()" class="px-xl py-2.5 text-on-surface-variant font-bold text-label-md hover:text-on-surface transition-colors">Cancel</button>
-                    <button onclick="saveAPIKey()" class="px-xl py-2.5 bg-primary text-on-primary rounded-lg font-bold text-label-md hover:opacity-90 active:scale-95 transition-all">Save</button>
-                </div>
+                <div id="test-error" class="hidden px-sm py-sm bg-error-container/20 border border-error/20 rounded-lg text-error font-body-sm"></div>
             </div>
         </div>
     </div>
 
     <script>
+
+    <script>
       // State
       let csrfToken = null;
-      let pollInterval = 10000;
+      let pollInterval = 10000; // Start with 10s
       let pollTimer = null;
       let chartData = [];
       const MAX_CHART_POINTS = 16;
@@ -313,74 +276,59 @@
         try {
           const res = await fetch('/v1/models');
           const data = await res.json();
-
+          
           const grid = document.getElementById('models-grid');
           grid.innerHTML = '';
-
-          const iconColors = ['primary', 'secondary', 'tertiary'];
-
-          for (let i = 0; i < data.data.length; i++) {
-            const model = data.data[i];
-            const iconColor = iconColors[i % 3];
-            const isFree = model.verified_anonymous;
-
+          
+          for (const model of data.data) {
             const card = document.createElement('div');
-            card.className = 'bg-surface-container border border-outline-variant/10 rounded-xl p-md flex flex-col gap-sm hover:border-primary/30 transition-all group';
-
+            card.className = 'bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-purple-500 transition-colors';
+            
+            const isFree = model.verified_anonymous;
+            const statusColor = isFree ? 'text-green-400' : 'text-yellow-400';
+            const statusText = isFree ? 'Free' : 'API Key';
+            
             card.innerHTML = `
-              <div class="flex justify-between items-start">
-                <div class="flex items-center gap-2">
-                  <div class="p-2 rounded-lg bg-surface-container-high">
-                    <span class="material-symbols-outlined text-${iconColor}">smart_toy</span>
+              <div class="flex items-start justify-between mb-3">
+                <div class="flex-1">
+                  <h3 class="text-white font-medium mb-1 model-name">${escapeHtml(model.id)}</h3>
+                  <div class="flex items-center gap-2 text-xs">
+                    <span class="${statusColor}">${statusText}</span>
+                    <span class="text-gray-500">•</span>
+                    <span class="text-gray-400">${model.context_length.toLocaleString()} ctx</span>
                   </div>
-                  ${isFree ? '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-error/10 text-error border border-error/20">FREE</span>' : ''}
                 </div>
-                <div class="flex gap-xs">
-                  <button class="p-1.5 rounded-md hover:bg-surface-variant text-on-surface-variant hover:text-primary transition-colors" onclick="copyModelName('${escapeHtml(model.id)}')">
-                    <span class="material-symbols-outlined text-[20px]">content_copy</span>
-                  </button>
-                  <button class="p-1.5 rounded-md hover:bg-surface-variant text-on-surface-variant hover:text-secondary transition-colors">
-                    <span class="material-symbols-outlined text-[20px]">restart_alt</span>
-                  </button>
-                  ${!isFree ? `<button class="p-1.5 rounded-md hover:bg-surface-variant text-on-surface-variant hover:text-primary transition-colors" onclick="openAPIKeyModal('${escapeHtml(model.id)}')">
-                    <span class="material-symbols-outlined text-[20px]">vpn_key</span>
-                  </button>` : ''}
-                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" class="sr-only peer model-toggle" data-model="${escapeHtml(model.id)}" checked>
+                  <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                </label>
               </div>
-              <div>
-                <h3 class="font-headline-md text-[20px] text-on-surface leading-tight model-name">${escapeHtml(model.id)}</h3>
-                <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Owner: opencode-zen</p>
-              </div>
-              <div class="mt-2 space-y-xs">
-                <div class="flex justify-between items-center py-1.5 border-b border-outline-variant/5">
-                  <span class="font-label-md text-on-surface-variant">Context</span>
-                  <span class="font-label-md text-on-surface font-semibold">${model.context_length.toLocaleString()}</span>
+              
+              <div class="flex items-center justify-between text-xs">
+                <div class="flex items-center gap-4">
+                  <div>
+                    <span class="text-gray-500">Requests:</span>
+                    <span class="text-white model-requests">0</span>
+                  </div>
+                  <div>
+                    <span class="text-gray-500">Latency:</span>
+                    <span class="text-cyan-400 model-latency">0ms</span>
+                  </div>
                 </div>
-                <div class="flex justify-between items-center py-1.5 border-b border-outline-variant/5">
-                  <span class="font-label-md text-on-surface-variant">Max Output</span>
-                  <span class="font-label-md text-on-surface font-semibold">${model.max_output.toLocaleString()}</span>
-                </div>
-              </div>
-              <div class="mt-2 flex items-center justify-between">
-                <div class="flex items-center gap-sm">
-                  <button onclick="quickTest('${escapeHtml(model.id)}', this)" class="test-btn px-4 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 font-bold text-label-sm hover:bg-primary hover:text-on-primary transition-all flex items-center gap-1.5">
-                    <span class="test-icon">Test</span>
-                  </button>
-                </div>
-                <div class="flex items-center gap-2">
-                  <label class="flex items-center cursor-pointer group">
-                    <div class="relative">
-                      <input checked class="sr-only peer model-toggle" type="checkbox" data-model="${escapeHtml(model.id)}"/>
-                      <div class="w-8 h-4 bg-surface-container-highest rounded-full border border-outline-variant/30 peer-checked:bg-secondary transition-colors"></div>
-                      <div class="absolute left-0.5 top-0.5 w-3 h-3 bg-on-surface rounded-full transition-all peer-checked:translate-x-4 peer-checked:bg-on-secondary-fixed"></div>
-                    </div>
-                  </label>
-                </div>
+                ${!isFree ? `<button class="text-purple-400 hover:text-purple-300 transition-colors api-key-btn" data-model="${escapeHtml(model.id)}">
+                  <span class="material-symbols-outlined text-sm">key</span>
+                </button>` : ''}
               </div>
             `;
-
+            
             grid.appendChild(card);
           }
+          
+          // Attach event listeners
+          document.querySelectorAll('.api-key-btn').forEach(btn => {
+            btn.addEventListener('click', () => openAPIKeyModal(btn.dataset.model));
+          });
+          
         } catch (err) {
           console.error('Failed to load models:', err);
         }
@@ -391,64 +339,81 @@
         try {
           const res = await fetch('/api/stats');
           const stats = await res.json();
-
+          
+          // Update bottom status bar
           document.getElementById('total-requests').textContent = stats.total_requests.toLocaleString();
           document.getElementById('avg-latency').textContent = Math.round(stats.avg_latency_ms) + 'ms';
           document.getElementById('total-tokens').textContent = stats.total_tokens.toLocaleString();
           document.getElementById('total-errors').textContent = stats.total_errors.toLocaleString();
-
+          
+          // Update per-model stats
+          for (const [modelId, modelStats] of Object.entries(stats.per_model)) {
+            const cards = document.querySelectorAll('.model-name');
+            for (const nameEl of cards) {
+              if (nameEl.textContent === modelId) {
+                const card = nameEl.closest('.bg-gray-800');
+                card.querySelector('.model-requests').textContent = modelStats.requests.toLocaleString();
+                card.querySelector('.model-latency').textContent = Math.round(modelStats.avg_latency_ms) + 'ms';
+              }
+            }
+          }
+          
+          // Update chart data
           const tokensPerMin = stats.tokens_per_minute || 0;
           chartData.push(tokensPerMin);
           if (chartData.length > MAX_CHART_POINTS) {
             chartData.shift();
           }
           renderChart();
-
+          
+          // Adaptive polling
           updatePollInterval(tokensPerMin);
+          
         } catch (err) {
           console.error('Failed to update stats:', err);
         }
       }
 
-      // Render 16-bar vertical chart
+      // Render 16-model vertical chart
       function renderChart() {
         const canvas = document.getElementById('chart');
         const ctx = canvas.getContext('2d');
         const width = canvas.width;
         const height = canvas.height;
-
+        
         ctx.clearRect(0, 0, width, height);
-
+        
         if (chartData.length === 0) return;
-
+        
         const max = Math.max(...chartData, 1);
         const barWidth = width / MAX_CHART_POINTS;
-
+        
         chartData.forEach((value, i) => {
           const barHeight = (value / max) * height;
           const x = i * barWidth;
           const y = height - barHeight;
-
+          
+          // Gradient from purple to cyan
           const gradient = ctx.createLinearGradient(0, y, 0, height);
           gradient.addColorStop(0, '#c0c1ff');
           gradient.addColorStop(1, '#4cd7f6');
-
+          
           ctx.fillStyle = gradient;
           ctx.fillRect(x, y, barWidth - 2, barHeight);
         });
       }
 
-      // Adaptive polling
+      // Adaptive polling based on tokens/min
       function updatePollInterval(tokensPerMin) {
         let newInterval;
         if (tokensPerMin > 1000) {
-          newInterval = 5000;
+          newInterval = 5000; // High activity: 5s
         } else if (tokensPerMin > 100) {
-          newInterval = 10000;
+          newInterval = 10000; // Medium activity: 10s
         } else {
-          newInterval = 30000;
+          newInterval = 30000; // Low activity: 30s
         }
-
+        
         if (newInterval !== pollInterval) {
           pollInterval = newInterval;
           clearInterval(pollTimer);
@@ -456,30 +421,28 @@
         }
       }
 
-      // Test modal functions
-      function openTestModal(modelId) {
+      // Test modal
+      function openTestModal() {
         document.getElementById('test-modal').classList.remove('hidden');
-        document.getElementById('test-model').value = modelId;
-        document.getElementById('test-prompt').value = '';
-        document.getElementById('test-result').textContent = '';
       }
 
       function closeTestModal() {
         document.getElementById('test-modal').classList.add('hidden');
+        document.getElementById('test-result').textContent = '';
       }
 
       async function runTest() {
         const model = document.getElementById('test-model').value;
         const prompt = document.getElementById('test-prompt').value;
         const resultEl = document.getElementById('test-result');
-
+        
         if (!prompt.trim()) {
           resultEl.textContent = 'Please enter a prompt';
           return;
         }
-
+        
         resultEl.textContent = 'Testing...';
-
+        
         try {
           const res = await fetch('/v1/chat/completions', {
             method: 'POST',
@@ -492,9 +455,9 @@
               messages: [{ role: 'user', content: prompt }]
             })
           });
-
+          
           const data = await res.json();
-
+          
           if (res.ok && data.choices && data.choices[0]) {
             resultEl.textContent = data.choices[0].message.content;
           } else {
@@ -505,86 +468,13 @@
         }
       }
 
-      // Quick test function (inline, no modal)
-      async function quickTest(modelId, buttonEl) {
-        const iconEl = buttonEl.querySelector('.test-icon');
-        const originalContent = iconEl.innerHTML;
-
-        // Extract provider from model ID
-        const provider = modelId.split('-')[0];
-
-        // Show loading spinner
-        iconEl.innerHTML = '<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>';
-        buttonEl.disabled = true;
-        buttonEl.classList.add('opacity-50', 'cursor-not-allowed');
-
-        try {
-          const res = await fetch(`/v1/${provider}/chat/completions`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRF-Token': csrfToken
-            },
-            body: JSON.stringify({
-              messages: [{ role: 'user', content: 'Hi' }]
-            })
-          });
-
-          const data = await res.json();
-
-          if (res.ok && data.choices && data.choices[0]) {
-            // Show success checkmark
-            iconEl.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span>';
-            buttonEl.classList.remove('bg-primary/10', 'text-primary', 'border-primary/20');
-            buttonEl.classList.add('bg-green-500/10', 'text-green-500', 'border-green-500/20');
-
-            // Reset after 2 seconds
-            setTimeout(() => {
-              iconEl.innerHTML = originalContent;
-              buttonEl.classList.remove('bg-green-500/10', 'text-green-500', 'border-green-500/20', 'opacity-50', 'cursor-not-allowed');
-              buttonEl.classList.add('bg-primary/10', 'text-primary', 'border-primary/20');
-              buttonEl.disabled = false;
-            }, 2000);
-          } else {
-            // Show error
-            iconEl.innerHTML = '<span class="material-symbols-outlined text-[16px]">error</span>';
-            buttonEl.classList.remove('bg-primary/10', 'text-primary', 'border-primary/20');
-            buttonEl.classList.add('bg-error/10', 'text-error', 'border-error/20');
-
-            // Reset after 2 seconds
-            setTimeout(() => {
-              iconEl.innerHTML = originalContent;
-              buttonEl.classList.remove('bg-error/10', 'text-error', 'border-error/20', 'opacity-50', 'cursor-not-allowed');
-              buttonEl.classList.add('bg-primary/10', 'text-primary', 'border-primary/20');
-              buttonEl.disabled = false;
-            }, 2000);
-          }
-        } catch (err) {
-          // Show error
-          iconEl.innerHTML = '<span class="material-symbols-outlined text-[16px]">error</span>';
-          buttonEl.classList.remove('bg-primary/10', 'text-primary', 'border-primary/20');
-          buttonEl.classList.add('bg-error/10', 'text-error', 'border-error/20');
-
-          // Reset after 2 seconds
-          setTimeout(() => {
-            iconEl.innerHTML = originalContent;
-            buttonEl.classList.remove('bg-error/10', 'text-error', 'border-error/20', 'opacity-50', 'cursor-not-allowed');
-            buttonEl.classList.add('bg-primary/10', 'text-primary', 'border-primary/20');
-            buttonEl.disabled = false;
-          }, 2000);
-        }
-      }
-
-      // API Key modal functions
-      let currentAPIKeyModel = null;
-
+      // API Key modal
       function openAPIKeyModal(modelId) {
-        currentAPIKeyModel = modelId;
         document.getElementById('api-key-modal').classList.remove('hidden');
-        document.getElementById('api-key-name').value = modelId;
+        document.getElementById('api-key-model').textContent = modelId;
+        document.getElementById('api-key-model').dataset.model = modelId;
         document.getElementById('api-key-input').value = '';
-        document.getElementById('api-key-priority').value = '1';
-
+        
         // Check if key exists
         fetch(`/api/models/${encodeURIComponent(modelId)}/key`)
           .then(res => res.json())
@@ -597,28 +487,19 @@
 
       function closeAPIKeyModal() {
         document.getElementById('api-key-modal').classList.add('hidden');
-        currentAPIKeyModel = null;
-      }
-
-      async function checkAPIKey() {
-        const key = document.getElementById('api-key-input').value;
-        if (!key.trim()) {
-          alert('Please enter an API key');
-          return;
-        }
-        alert('API key format looks valid');
       }
 
       async function saveAPIKey() {
+        const modelId = document.getElementById('api-key-model').dataset.model;
         const key = document.getElementById('api-key-input').value;
-
+        
         if (!key.trim()) {
           alert('Please enter an API key');
           return;
         }
-
+        
         try {
-          const res = await fetch(`/api/models/${encodeURIComponent(currentAPIKeyModel)}/key`, {
+          const res = await fetch(`/api/models/${encodeURIComponent(modelId)}/key`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -626,7 +507,7 @@
             },
             body: JSON.stringify({ key: key })
           });
-
+          
           if (res.ok) {
             closeAPIKeyModal();
             alert('API key saved successfully');
@@ -638,11 +519,28 @@
         }
       }
 
-      // Copy model name
-      function copyModelName(modelName) {
-        navigator.clipboard.writeText(modelName).then(() => {
-          console.log('Copied:', modelName);
-        });
+      async function deleteAPIKey() {
+        const modelId = document.getElementById('api-key-model').dataset.model;
+        
+        if (!confirm('Delete API key for ' + modelId + '?')) return;
+        
+        try {
+          const res = await fetch(`/api/models/${encodeURIComponent(modelId)}/key`, {
+            method: 'DELETE',
+            headers: {
+              'X-CSRF-Token': csrfToken
+            }
+          });
+          
+          if (res.ok) {
+            closeAPIKeyModal();
+            alert('API key deleted successfully');
+          } else {
+            alert('Failed to delete API key');
+          }
+        } catch (err) {
+          alert('Request failed: ' + err.message);
+        }
       }
 
       // XSS protection
@@ -662,5 +560,5 @@
 
       init();
     </script>
-</body>
+  </body>
 </html>
