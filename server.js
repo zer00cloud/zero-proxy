@@ -190,6 +190,15 @@ const server = http.createServer(async (req, res) => {
         endpoints: ["/v1/models", "/v1/chat/completions"],
       });
     }
+    if (req.method === "GET" && url.pathname === "/api/status") {
+      return json(res, 200, {
+        service: "zen-proxy",
+        upstream: UPSTREAM,
+        upstream_auth: UPSTREAM_KEY ? "key-set" : "anonymous",
+        models: AUTO_FALLBACK_CHAIN,
+        endpoints: ["/v1/models", "/v1/chat/completions"],
+      });
+    }
     if (req.method === "GET" && url.pathname === "/api/stats") {
       return json(res, 200, statsTracker.getStats());
     }
