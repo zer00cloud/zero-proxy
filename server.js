@@ -1,4 +1,5 @@
 import http from "node:http";
+import fs from "node:fs";
 import { FREE_MODELS, AUTO_FALLBACK_CHAIN, MODEL_IDS } from "./models.js";
 import { statsTracker } from "./stats.js";
 import { apiKeyManager } from "./api-keys.js";
@@ -221,6 +222,19 @@ const server = http.createServer(async (req, res) => {
         models: AUTO_FALLBACK_CHAIN,
         endpoints: ["/v1/models", "/v1/chat/completions"],
       });
+    }
+    if (req.method === "GET" && url.pathname === "/dashboard") {
+      try {
+        const html = fs.readFileSync("./public/index.html", "utf8");
+        res.writeHead(200, {
+          "Content-Type": "text/html",
+          "Cache-Control": "no-cache"
+        });
+        return res.end(html);
+      } catch (err) {
+        log("Failed to load dashboard:", err.message);
+        return json(res, 500, { error: { message: "Dashboard not found" } });
+      }
     }
     if (req.method === "GET" && url.pathname === "/api/status") {
       return json(res, 200, {
