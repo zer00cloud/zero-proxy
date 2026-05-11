@@ -157,7 +157,110 @@
           "tokens": 139
         }
       }
+    },
+    {
+      "timestamp": 1778512620000,
+      "count": 2,
+      "errors": 2,
+      "latencies": [
+        605,
+        203
+      ],
+      "tokens": 0,
+      "models": {
+        "kimi-k2.5-free": {
+          "count": 2,
+          "tokens": 0
+        }
+      }
+    },
+    {
+      "timestamp": 1778512680000,
+      "count": 7,
+      "errors": 3,
+      "latencies": [
+        204,
+        205,
+        588,
+        5221,
+        4157,
+        8691,
+        8570
+      ],
+      "tokens": 760,
+      "models": {
+        "kimi-k2.5-free": {
+          "count": 2,
+          "tokens": 0
+        },
+        "glm-4.7-free": {
+          "count": 1,
+          "tokens": 0
+        },
+        "minimax-m2.5-free": {
+          "count": 2,
+          "tokens": 207
+        },
+        "big-pickle": {
+          "count": 1,
+          "tokens": 421
+        },
+        "nemotron-3-super-free": {
+          "count": 1,
+          "tokens": 132
+        }
+      }
+    },
+    {
+      "timestamp": 1778512980000,
+      "count": 1,
+      "errors": 1,
+      "latencies": [
+        1862
+      ],
+      "tokens": 0,
+      "models": {
+        "ring-2.6-1t-free": {
+          "count": 1,
+          "tokens": 0
+        }
+      }
+    },
+    {
+      "timestamp": 1778513160000,
+      "count": 2,
+      "errors": 1,
+      "latencies": [
+        2743,
+        561
+      ],
+      "tokens": 89,
+      "models": {
+        "big-pickle": {
+          "count": 1,
+          "tokens": 89
+        },
+        "glm-4.7-free": {
+          "count": 1,
+          "tokens": 0
+        }
+      }
+    },
+    {
+      "timestamp": 1778513220000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        1398
+      ],
+      "tokens": 44,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 44
+        }
+      }
     }
   ],
-  "lastUpdated": 1778512527781
+  "lastUpdated": 1778513231248
 }

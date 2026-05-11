@@ -109,6 +109,20 @@
         .chart-gradient {
             background: linear-gradient(180deg, rgba(192, 193, 255, 0.1) 0%, rgba(192, 193, 255, 0) 100%);
         }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fade-in 0.3s ease-out;
+        }
     </style>
 </head>
 <body class="bg-background text-on-background font-body-md min-h-screen flex flex-col">
@@ -336,10 +350,10 @@
                   ${isFree ? '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-error/10 text-error border border-error/20">FREE</span>' : ''}
                 </div>
                 <div class="flex gap-xs">
-                  <button class="p-1.5 rounded-md hover:bg-surface-variant text-on-surface-variant hover:text-primary transition-colors" onclick="copyModelName('${escapeHtml(model.id)}')">
+                  <button class="p-1.5 rounded-md hover:bg-surface-variant text-on-surface-variant hover:text-primary transition-colors" onclick="copyModelName('${escapeHtml(model.id)}', event)">
                     <span class="material-symbols-outlined text-[20px]">content_copy</span>
                   </button>
-                  <button class="p-1.5 rounded-md hover:bg-surface-variant text-on-surface-variant hover:text-secondary transition-colors">
+                  <button class="p-1.5 rounded-md hover:bg-surface-variant text-on-surface-variant hover:text-secondary transition-colors" onclick="refreshModel('${escapeHtml(model.id)}', event)">
                     <span class="material-symbols-outlined text-[20px]">restart_alt</span>
                   </button>
                   ${!isFree ? `<button class="p-1.5 rounded-md hover:bg-surface-variant text-on-surface-variant hover:text-primary transition-colors" onclick="openAPIKeyModal('${escapeHtml(model.id)}')">
@@ -510,16 +524,13 @@
         const iconEl = buttonEl.querySelector('.test-icon');
         const originalContent = iconEl.innerHTML;
 
-        // Extract provider from model ID
-        const provider = modelId.split('-')[0];
-
         // Show loading spinner
         iconEl.innerHTML = '<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>';
         buttonEl.disabled = true;
         buttonEl.classList.add('opacity-50', 'cursor-not-allowed');
 
         try {
-          const res = await fetch(`/v1/${provider}/chat/completions`, {
+          const res = await fetch(`/v1/${modelId}/chat/completions`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -639,10 +650,105 @@
       }
 
       // Copy model name
-      function copyModelName(modelName) {
+      // Refresh model status and card
+      async function refreshModel(modelId, event) {
+        const button = event?.target.closest('button');
+        const card = button?.closest('.bg-surface-container');
+
+        if (button) {
+          const icon = button.querySelector('.material-symbols-outlined');
+          icon.classList.add('animate-spin');
+        }
+
+        try {
+          // Test model availability with quick request
+          const res = await fetch(`/v1/${modelId}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({
+              messages: [{ role: 'user', content: 'ping' }],
+              max_tokens: 5
+            })
+          });
+
+          // Update card visual feedback based on status
+          if (card) {
+            if (res.ok) {
+              // Success - flash green border
+              card.style.borderColor = 'rgb(var(--secondary))';
+              setTimeout(() => {
+                card.style.borderColor = '';
+              }, 1500);
+              showToast(`${modelId} is available`);
+            } else {
+              // Error - flash red border
+              card.style.borderColor = 'rgb(var(--error))';
+              setTimeout(() => {
+                card.style.borderColor = '';
+              }, 1500);
+              showToast(`${modelId} unavailable`, true);
+            }
+          }
+
+          // Reload stats to get fresh data
+          await updateStats();
+
+        } catch (err) {
+          console.error('Refresh failed:', err);
+          if (card) {
+            card.style.borderColor = 'rgb(var(--error))';
+            setTimeout(() => {
+              card.style.borderColor = '';
+            }, 1500);
+          }
+          showToast('Refresh failed', true);
+        } finally {
+          if (button) {
+            const icon = button.querySelector('.material-symbols-outlined');
+            icon.classList.remove('animate-spin');
+          }
+        }
+      }
+
+      function copyModelName(modelName, event) {
         navigator.clipboard.writeText(modelName).then(() => {
-          console.log('Copied:', modelName);
+          // Visual feedback - change icon temporarily
+          const button = event?.target.closest('button');
+          if (button) {
+            const icon = button.querySelector('.material-symbols-outlined');
+            const originalIcon = icon.textContent;
+            icon.textContent = 'check';
+            icon.classList.add('text-secondary');
+
+            setTimeout(() => {
+              icon.textContent = originalIcon;
+              icon.classList.remove('text-secondary');
+            }, 1500);
+          }
+
+          // Show toast notification
+          showToast(`Copied: ${modelName}`);
+        }).catch(err => {
+          console.error('Failed to copy:', err);
+          showToast('Failed to copy', true);
         });
+      }
+
+      // Toast notification
+      function showToast(message, isError = false) {
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-20 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg ${isError ? 'bg-error text-on-error' : 'bg-secondary text-on-secondary'} font-label-md shadow-lg z-50 animate-fade-in`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+          toast.style.opacity = '0';
+          toast.style.transition = 'opacity 0.3s';
+          setTimeout(() => toast.remove(), 300);
+        }, 2000);
       }
 
       // XSS protection

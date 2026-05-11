@@ -53,11 +53,9 @@ function authOk(req) {
   return h === `Bearer ${PROXY_KEY}`;
 }
 
-// Extract provider name from model ID
-function getProvider(modelId) {
-  // Extract the part before the first dash, or use full name if no dash
-  const match = modelId.match(/^([^-]+)/);
-  return match ? match[1] : modelId;
+// Use full model ID as endpoint path (no extraction needed)
+function getModelEndpoint(modelId) {
+  return modelId;
 }
 
 // Call upstream once with a given model. Returns { status, headers, body }.
@@ -307,7 +305,7 @@ const server = http.createServer(async (req, res) => {
         endpoints: [
           "/v1/models",
           "/v1/chat/completions",
-          ...FREE_MODELS.map(m => `/v1/${getProvider(m.id)}/chat/completions`)
+          ...FREE_MODELS.map(m => `/v1/${m.id}/chat/completions`)
         ],
       });
     }
@@ -333,7 +331,7 @@ const server = http.createServer(async (req, res) => {
         endpoints: [
           "/v1/models",
           "/v1/chat/completions",
-          ...FREE_MODELS.map(m => `/v1/${getProvider(m.id)}/chat/completions`)
+          ...FREE_MODELS.map(m => `/v1/${m.id}/chat/completions`)
         ],
       });
     }
@@ -389,15 +387,15 @@ const server = http.createServer(async (req, res) => {
       }
       return await handleChatCompletions(req, res);
     }
-    // Per-model endpoints: /v1/{provider}/chat/completions
+    // Per-model endpoints: /v1/{model-id}/chat/completions
     if (req.method === "POST" && url.pathname.match(/^\/v1\/[^\/]+\/chat\/completions$/)) {
-      const provider = url.pathname.split('/')[2];
+      const modelId = url.pathname.split('/')[2];
 
-      // Find model that matches this provider
-      const model = FREE_MODELS.find(m => getProvider(m.id) === provider);
+      // Find model that matches this ID
+      const model = FREE_MODELS.find(m => m.id === modelId);
 
       if (!model) {
-        return json(res, 404, { error: { message: `Unknown provider: ${provider}` } });
+        return json(res, 404, { error: { message: `Unknown model: ${modelId}` } });
       }
 
       // Validate CSRF token
