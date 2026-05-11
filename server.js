@@ -511,12 +511,29 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/tunnel/start" && req.method === "POST") {
       log(`🚇 Starting new tunnel...`);
       try {
-        const { spawn } = await import("node:child_process");
+        const { spawn, exec } = await import("node:child_process");
+        const { promisify } = await import("node:util");
+        const execAsync = promisify(exec);
 
-        // Kill existing tunnel process if any
+        // Kill ALL existing cloudflared tunnels for this port first
+        try {
+          await execAsync(`pkill -f "cloudflared tunnel --url http://localhost:${PORT}"`);
+          log(`🧹 Killed all existing tunnels`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (err) {
+          // No existing tunnels, that's fine
+          log(`ℹ️  No existing tunnels to kill`);
+        }
+
+        // Kill global tunnel process if exists
         if (global.tunnelProcess) {
-          global.tunnelProcess.kill();
-          global.tunnelProcess = null;
+          try {
+            global.tunnelProcess.kill();
+            global.tunnelProcess = null;
+            log(`🧹 Killed global tunnel process`);
+          } catch (err) {
+            log(`⚠️  Failed to kill global tunnel: ${err.message}`);
+          }
         }
 
         // Start new cloudflared tunnel
@@ -572,14 +589,31 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/tunnel/stop" && req.method === "POST") {
       log(`🚇 Stopping tunnel...`);
       try {
+        const { exec } = await import("node:child_process");
+        const { promisify } = await import("node:util");
+        const execAsync = promisify(exec);
+
+        // Kill global tunnel process
         if (global.tunnelProcess) {
-          global.tunnelProcess.kill();
-          global.tunnelProcess = null;
-          log(`✅ Tunnel stopped`);
-          return json(res, 200, { success: true });
-        } else {
-          return json(res, 200, { success: true, message: "No tunnel running" });
+          try {
+            global.tunnelProcess.kill();
+            global.tunnelProcess = null;
+            log(`✅ Killed global tunnel process`);
+          } catch (err) {
+            log(`⚠️  Failed to kill global tunnel: ${err.message}`);
+          }
         }
+
+        // Kill ALL cloudflared tunnels for this port
+        try {
+          await execAsync(`pkill -f "cloudflared tunnel --url http://localhost:${PORT}"`);
+          log(`✅ Killed all cloudflared tunnels for port ${PORT}`);
+        } catch (err) {
+          // No tunnels running, that's fine
+          log(`ℹ️  No tunnels to kill`);
+        }
+
+        return json(res, 200, { success: true });
       } catch (err) {
         log(`❌ Failed to stop tunnel: ${err.message}`);
         return json(res, 500, { error: { message: `Failed to stop tunnel: ${err.message}` } });
