@@ -1,6 +1,7 @@
 import http from "node:http";
 import { FREE_MODELS, AUTO_FALLBACK_CHAIN, MODEL_IDS } from "./models.js";
 import { statsTracker } from "./stats.js";
+import { apiKeyManager } from "./api-keys.js";
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -204,6 +205,39 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && (url.pathname === "/v1/models" || url.pathname === "/models")) {
       return handleModels(res);
+    }
+    // API key management endpoints
+    if (url.pathname.startsWith("/api/models/") && url.pathname.endsWith("/key")) {
+      const modelId = decodeURIComponent(url.pathname.split('/')[3]);
+
+      if (req.method === "GET") {
+        // Check if key exists
+        return json(res, 200, { exists: apiKeyManager.hasKey(modelId) });
+      }
+
+      if (req.method === "POST") {
+        // Save API key
+        const raw = await readBody(req);
+        let payload;
+        try {
+          payload = JSON.parse(raw || "{}");
+        } catch {
+          return json(res, 400, { error: { message: "invalid JSON body" } });
+        }
+
+        if (!payload.key) {
+          return json(res, 400, { error: { message: "key field required" } });
+        }
+
+        apiKeyManager.setKey(modelId, payload.key);
+        return json(res, 200, { success: true });
+      }
+
+      if (req.method === "DELETE") {
+        // Delete API key
+        apiKeyManager.deleteKey(modelId);
+        return json(res, 200, { success: true });
+      }
     }
     if (
       req.method === "POST" &&
