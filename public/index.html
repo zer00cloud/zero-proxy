@@ -541,6 +541,47 @@
             })
           });
 
+          // If CSRF token expired, refresh and retry
+          if (res.status === 403) {
+            console.log('CSRF token expired, refreshing...');
+            await fetchCSRFToken();
+
+            // Retry with new token
+            const retryRes = await fetch(`/v1/${modelId}/chat/completions`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+              },
+              body: JSON.stringify({
+                messages: [{ role: 'user', content: 'Hi' }]
+              })
+            });
+
+            if (retryRes.ok) {
+              const retryData = await retryRes.json();
+              if (retryData.choices && retryData.choices[0]) {
+                // Show success checkmark
+                iconEl.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span>';
+                buttonEl.classList.remove('bg-primary/10', 'text-primary', 'border-primary/20');
+                buttonEl.classList.add('bg-green-500/10', 'text-green-500', 'border-green-500/20');
+
+                // Reset after 2 seconds
+                setTimeout(() => {
+                  iconEl.innerHTML = originalContent;
+                  buttonEl.classList.remove('bg-green-500/10', 'text-green-500', 'border-green-500/20');
+                  buttonEl.classList.add('bg-primary/10', 'text-primary', 'border-primary/20');
+                  buttonEl.disabled = false;
+                  buttonEl.classList.remove('opacity-50', 'cursor-not-allowed');
+                }, 2000);
+                return;
+              }
+            }
+
+            // If retry also failed, show error
+            throw new Error('CSRF token refresh failed');
+          }
+
           const data = await res.json();
 
           if (res.ok && data.choices && data.choices[0]) {
@@ -662,7 +703,7 @@
 
         try {
           // Test model availability with quick request
-          const res = await fetch(`/v1/${modelId}/chat/completions`, {
+          let res = await fetch(`/v1/${modelId}/chat/completions`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -673,6 +714,25 @@
               max_tokens: 5
             })
           });
+
+          // If CSRF token expired, refresh and retry
+          if (res.status === 403) {
+            console.log('CSRF token expired, refreshing...');
+            await fetchCSRFToken();
+
+            // Retry with new token
+            res = await fetch(`/v1/${modelId}/chat/completions`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+              },
+              body: JSON.stringify({
+                messages: [{ role: 'user', content: 'ping' }],
+                max_tokens: 5
+              })
+            });
+          }
 
           // Update card visual feedback based on status
           if (card) {

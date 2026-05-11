@@ -27,7 +27,17 @@ function validateCSRF(req) {
 }
 
 function log(...a) {
-  console.log(new Date().toISOString(), ...a);
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}]`, ...a);
+}
+
+function logRequest(req, details = {}) {
+  log(`📥 ${req.method} ${req.url}`, details);
+}
+
+function logResponse(status, details = {}) {
+  const emoji = status >= 200 && status < 300 ? '✅' : status >= 400 ? '❌' : '⚠️';
+  log(`${emoji} Response ${status}`, details);
 }
 
 function json(res, status, body) {
@@ -122,8 +132,11 @@ async function handleChatCompletions(req, res) {
   try {
     payload = JSON.parse(raw || "{}");
   } catch {
+    logResponse(400, { error: "invalid JSON body" });
     return json(res, 400, { error: { message: "invalid JSON body" } });
   }
+
+  log(`🔄 Chat request: model=${payload.model || "auto"}, stream=${payload.stream || false}`);
 
   if (payload.stream) {
     // Stream straight to upstream with no fallback (see note above).
@@ -136,8 +149,12 @@ async function handleChatCompletions(req, res) {
     const modelApiKey = apiKeyManager.getKey(model);
     if (modelApiKey) {
       headers["Authorization"] = `Bearer ${modelApiKey}`;
+      log(`🔑 Using saved API key for ${model}`);
     } else if (UPSTREAM_KEY) {
       headers["Authorization"] = `Bearer ${UPSTREAM_KEY}`;
+      log(`🔑 Using UPSTREAM_KEY for ${model}`);
+    } else {
+      log(`⚠️  No API key for ${model} (anonymous mode)`);
     }
 
     const upstream = await fetch(`${UPSTREAM}/chat/completions`, {
@@ -159,7 +176,7 @@ async function handleChatCompletions(req, res) {
     }
     res.end();
     const latency = Date.now() - startTime;
-    log(`stream ${model} -> ${upstream.status}`);
+    logResponse(upstream.status, { model, latency: `${latency}ms`, type: "stream" });
 
     // Record stats (estimate tokens for streaming)
     statsTracker.recordRequest(model, latency, upstream.status, 0);
@@ -168,7 +185,11 @@ async function handleChatCompletions(req, res) {
 
   const r = await callWithFallback("/chat/completions", payload);
   const latency = Date.now() - startTime;
-  log(`chat ${payload.model || "auto"} -> ${r.triedModel} -> ${r.status}`);
+  logResponse(r.status, {
+    requested: payload.model || "auto",
+    used: r.triedModel,
+    latency: `${latency}ms`
+  });
 
   // Extract token usage from response if available
   let tokens = 0;
@@ -176,6 +197,7 @@ async function handleChatCompletions(req, res) {
     const responseData = JSON.parse(r.body);
     if (responseData.usage?.total_tokens) {
       tokens = responseData.usage.total_tokens;
+      log(`📊 Tokens used: ${tokens}`);
     }
   } catch {
     // Ignore parse errors
@@ -195,16 +217,20 @@ async function handleChatCompletions(req, res) {
 // Handle model-specific endpoint (no fallback)
 async function handleModelSpecificRequest(req, res, modelId) {
   const startTime = Date.now();
+  log(`🎯 Model-specific request: ${modelId}`);
+
   const raw = await readBody(req);
   let payload;
   try {
     payload = JSON.parse(raw || "{}");
   } catch {
+    logResponse(400, { error: "invalid JSON body" });
     return json(res, 400, { error: { message: "invalid JSON body" } });
   }
 
   // Override model with the one from URL
   payload.model = modelId;
+  log(`📝 Payload model set to: ${modelId}`);
 
   if (payload.stream) {
     const headers = { "Content-Type": "application/json" };
@@ -213,8 +239,12 @@ async function handleModelSpecificRequest(req, res, modelId) {
     const modelApiKey = apiKeyManager.getKey(modelId);
     if (modelApiKey) {
       headers["Authorization"] = `Bearer ${modelApiKey}`;
+      log(`🔑 Using saved API key for ${modelId}`);
     } else if (UPSTREAM_KEY) {
       headers["Authorization"] = `Bearer ${UPSTREAM_KEY}`;
+      log(`🔑 Using UPSTREAM_KEY for ${modelId}`);
+    } else {
+      log(`⚠️  No API key for ${modelId} (anonymous mode)`);
     }
 
     const upstream = await fetch(`${UPSTREAM}/chat/completions`, {
@@ -236,7 +266,7 @@ async function handleModelSpecificRequest(req, res, modelId) {
     }
     res.end();
     const latency = Date.now() - startTime;
-    log(`stream ${modelId} -> ${upstream.status}`);
+    logResponse(upstream.status, { model: modelId, latency: `${latency}ms`, type: "stream" });
 
     statsTracker.recordRequest(modelId, latency, upstream.status, 0);
     return;
@@ -245,7 +275,7 @@ async function handleModelSpecificRequest(req, res, modelId) {
   // Non-streaming: call upstream directly (no fallback)
   const r = await callUpstream("/chat/completions", payload);
   const latency = Date.now() - startTime;
-  log(`chat ${modelId} -> ${r.status}`);
+  logResponse(r.status, { model: modelId, latency: `${latency}ms` });
 
   // Extract token usage
   let tokens = 0;
@@ -253,6 +283,7 @@ async function handleModelSpecificRequest(req, res, modelId) {
     const responseData = JSON.parse(r.body);
     if (responseData.usage?.total_tokens) {
       tokens = responseData.usage.total_tokens;
+      log(`📊 Tokens used: ${tokens}`);
     }
   } catch {
     // Ignore parse errors
@@ -283,6 +314,8 @@ function handleModels(res) {
 }
 
 const server = http.createServer(async (req, res) => {
+  logRequest(req);
+
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
@@ -292,11 +325,15 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
-  if (!authOk(req)) return json(res, 401, { error: { message: "bad proxy key" } });
+  if (!authOk(req)) {
+    logResponse(401, { error: "bad proxy key" });
+    return json(res, 401, { error: { message: "bad proxy key" } });
+  }
 
   const url = new URL(req.url, "http://x");
   try {
     if (req.method === "GET" && url.pathname === "/") {
+      logResponse(200, { endpoint: "status" });
       return json(res, 200, {
         service: "zen-proxy",
         upstream: UPSTREAM,
@@ -310,6 +347,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (req.method === "GET" && url.pathname === "/dashboard") {
+      log(`📄 Serving dashboard`);
       try {
         const html = fs.readFileSync("./public/index.html", "utf8");
         res.writeHead(200, {
@@ -318,11 +356,12 @@ const server = http.createServer(async (req, res) => {
         });
         return res.end(html);
       } catch (err) {
-        log("Failed to load dashboard:", err.message);
+        log("❌ Failed to load dashboard:", err.message);
         return json(res, 500, { error: { message: "Dashboard not found" } });
       }
     }
     if (req.method === "GET" && url.pathname === "/api/status") {
+      logResponse(200, { endpoint: "api/status" });
       return json(res, 200, {
         service: "zen-proxy",
         upstream: UPSTREAM,
@@ -336,21 +375,28 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (req.method === "GET" && url.pathname === "/api/stats") {
+      logResponse(200, { endpoint: "api/stats" });
       return json(res, 200, statsTracker.getStats());
     }
     if (req.method === "GET" && url.pathname === "/api/csrf-token") {
-      return json(res, 200, { token: generateCSRFToken() });
+      const token = generateCSRFToken();
+      log(`🔐 Generated CSRF token: ${token.substring(0, 8)}...`);
+      return json(res, 200, { token });
     }
     if (req.method === "GET" && (url.pathname === "/v1/models" || url.pathname === "/models")) {
+      logResponse(200, { endpoint: "models list" });
       return handleModels(res);
     }
     // API key management endpoints
     if (url.pathname.startsWith("/api/models/") && url.pathname.endsWith("/key")) {
       const modelId = decodeURIComponent(url.pathname.split('/')[3]);
+      log(`🔑 API key operation for model: ${modelId}`);
 
       if (req.method === "GET") {
         // Check if key exists
-        return json(res, 200, { exists: apiKeyManager.hasKey(modelId) });
+        const exists = apiKeyManager.hasKey(modelId);
+        log(`🔍 API key exists for ${modelId}: ${exists}`);
+        return json(res, 200, { exists });
       }
 
       if (req.method === "POST") {
@@ -360,20 +406,24 @@ const server = http.createServer(async (req, res) => {
         try {
           payload = JSON.parse(raw || "{}");
         } catch {
+          logResponse(400, { error: "invalid JSON body" });
           return json(res, 400, { error: { message: "invalid JSON body" } });
         }
 
         if (!payload.key) {
+          logResponse(400, { error: "key field required" });
           return json(res, 400, { error: { message: "key field required" } });
         }
 
         apiKeyManager.setKey(modelId, payload.key);
+        log(`✅ API key saved for ${modelId}`);
         return json(res, 200, { success: true });
       }
 
       if (req.method === "DELETE") {
         // Delete API key
         apiKeyManager.deleteKey(modelId);
+        log(`🗑️  API key deleted for ${modelId}`);
         return json(res, 200, { success: true });
       }
     }
@@ -383,6 +433,7 @@ const server = http.createServer(async (req, res) => {
     ) {
       // Validate CSRF token for dashboard requests
       if (!validateCSRF(req)) {
+        logResponse(403, { error: "CSRF token required" });
         return json(res, 403, { error: { message: "CSRF token required" } });
       }
       return await handleChatCompletions(req, res);
@@ -390,24 +441,30 @@ const server = http.createServer(async (req, res) => {
     // Per-model endpoints: /v1/{model-id}/chat/completions
     if (req.method === "POST" && url.pathname.match(/^\/v1\/[^\/]+\/chat\/completions$/)) {
       const modelId = url.pathname.split('/')[2];
+      log(`🔍 Looking for model: ${modelId}`);
 
       // Find model that matches this ID
       const model = FREE_MODELS.find(m => m.id === modelId);
 
       if (!model) {
+        logResponse(404, { error: `Unknown model: ${modelId}` });
         return json(res, 404, { error: { message: `Unknown model: ${modelId}` } });
       }
 
+      log(`✅ Found model: ${model.id}`);
+
       // Validate CSRF token
       if (!validateCSRF(req)) {
+        logResponse(403, { error: "CSRF token required" });
         return json(res, 403, { error: { message: "CSRF token required" } });
       }
 
       return await handleModelSpecificRequest(req, res, model.id);
     }
+    logResponse(404, { error: `no route: ${req.method} ${url.pathname}` });
     json(res, 404, { error: { message: `no route: ${req.method} ${url.pathname}` } });
   } catch (err) {
-    log("error:", err);
+    log("❌ Server error:", err);
     json(res, 500, { error: { message: String(err?.message || err) } });
   }
 });

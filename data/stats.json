@@ -260,7 +260,271 @@
           "tokens": 44
         }
       }
+    },
+    {
+      "timestamp": 1778513280000,
+      "count": 3,
+      "errors": 1,
+      "latencies": [
+        4464,
+        2096,
+        564
+      ],
+      "tokens": 136,
+      "models": {
+        "big-pickle": {
+          "count": 1,
+          "tokens": 89
+        },
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 47
+        },
+        "qwen3.6-plus-free": {
+          "count": 1,
+          "tokens": 0
+        }
+      }
+    },
+    {
+      "timestamp": 1778513340000,
+      "count": 4,
+      "errors": 0,
+      "latencies": [
+        61787,
+        4583,
+        8558,
+        3624
+      ],
+      "tokens": 192,
+      "models": {
+        "nemotron-3-super-free": {
+          "count": 2,
+          "tokens": 44
+        },
+        "minimax-m2.5-free": {
+          "count": 2,
+          "tokens": 148
+        }
+      }
+    },
+    {
+      "timestamp": 1778513400000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        2461
+      ],
+      "tokens": 47,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 47
+        }
+      }
+    },
+    {
+      "timestamp": 1778514060000,
+      "count": 4,
+      "errors": 3,
+      "latencies": [
+        3546,
+        598,
+        613,
+        589
+      ],
+      "tokens": 55,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 55
+        },
+        "minimax-m2.1-free": {
+          "count": 1,
+          "tokens": 0
+        },
+        "glm-4.7-free": {
+          "count": 1,
+          "tokens": 0
+        },
+        "glm-5-free": {
+          "count": 1,
+          "tokens": 0
+        }
+      }
+    },
+    {
+      "timestamp": 1778514240000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        13500
+      ],
+      "tokens": 593,
+      "models": {
+        "big-pickle": {
+          "count": 1,
+          "tokens": 593
+        }
+      }
+    },
+    {
+      "timestamp": 1778514300000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        5179
+      ],
+      "tokens": 144,
+      "models": {
+        "nemotron-3-super-free": {
+          "count": 1,
+          "tokens": 144
+        }
+      }
+    },
+    {
+      "timestamp": 1778514360000,
+      "count": 4,
+      "errors": 1,
+      "latencies": [
+        5597,
+        9622,
+        2308,
+        500
+      ],
+      "tokens": 688,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 2,
+          "tokens": 184
+        },
+        "big-pickle": {
+          "count": 1,
+          "tokens": 504
+        },
+        "glm-4.7-free": {
+          "count": 1,
+          "tokens": 0
+        }
+      }
+    },
+    {
+      "timestamp": 1778514420000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        14254
+      ],
+      "tokens": 268,
+      "models": {
+        "nemotron-3-super-free": {
+          "count": 1,
+          "tokens": 268
+        }
+      }
+    },
+    {
+      "timestamp": 1778514540000,
+      "count": 2,
+      "errors": 1,
+      "latencies": [
+        511,
+        14839
+      ],
+      "tokens": 736,
+      "models": {
+        "glm-4.7-free": {
+          "count": 1,
+          "tokens": 0
+        },
+        "big-pickle": {
+          "count": 1,
+          "tokens": 736
+        }
+      }
+    },
+    {
+      "timestamp": 1778514600000,
+      "count": 5,
+      "errors": 4,
+      "latencies": [
+        791,
+        402,
+        903,
+        585,
+        11739
+      ],
+      "tokens": 627,
+      "models": {
+        "ring-2.6-1t-free": {
+          "count": 1,
+          "tokens": 0
+        },
+        "trinity-large-preview-free": {
+          "count": 2,
+          "tokens": 0
+        },
+        "glm-4.7-free": {
+          "count": 1,
+          "tokens": 0
+        },
+        "big-pickle": {
+          "count": 1,
+          "tokens": 627
+        }
+      }
+    },
+    {
+      "timestamp": 1778515200000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        3668
+      ],
+      "tokens": 90,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 90
+        }
+      }
+    },
+    {
+      "timestamp": 1778515320000,
+      "count": 2,
+      "errors": 0,
+      "latencies": [
+        5258,
+        10016
+      ],
+      "tokens": 572,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 76
+        },
+        "big-pickle": {
+          "count": 1,
+          "tokens": 496
+        }
+      }
+    },
+    {
+      "timestamp": 1778515560000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        4825
+      ],
+      "tokens": 57,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 57
+        }
+      }
     }
   ],
-  "lastUpdated": 1778513231248
+  "lastUpdated": 1778515587229
 }
