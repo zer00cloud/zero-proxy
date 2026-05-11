@@ -43,7 +43,14 @@ async function callUpstream(path, payload, extraHeaders = {}) {
     Accept: "application/json",
     ...extraHeaders,
   };
-  if (UPSTREAM_KEY) headers["Authorization"] = `Bearer ${UPSTREAM_KEY}`;
+
+  // Check if model has a saved API key
+  const modelApiKey = apiKeyManager.getKey(payload.model);
+  if (modelApiKey) {
+    headers["Authorization"] = `Bearer ${modelApiKey}`;
+  } else if (UPSTREAM_KEY) {
+    headers["Authorization"] = `Bearer ${UPSTREAM_KEY}`;
+  }
 
   const r = await fetch(`${UPSTREAM}${path}`, {
     method: "POST",
@@ -102,7 +109,15 @@ async function handleChatCompletions(req, res) {
       ? payload.model
       : AUTO_FALLBACK_CHAIN[0];
     const headers = { "Content-Type": "application/json" };
-    if (UPSTREAM_KEY) headers["Authorization"] = `Bearer ${UPSTREAM_KEY}`;
+
+    // Check if model has a saved API key
+    const modelApiKey = apiKeyManager.getKey(model);
+    if (modelApiKey) {
+      headers["Authorization"] = `Bearer ${modelApiKey}`;
+    } else if (UPSTREAM_KEY) {
+      headers["Authorization"] = `Bearer ${UPSTREAM_KEY}`;
+    }
+
     const upstream = await fetch(`${UPSTREAM}/chat/completions`, {
       method: "POST",
       headers,
