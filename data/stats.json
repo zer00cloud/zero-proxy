@@ -1,0 +1,20 @@
+{
+  "buckets": [
+    {
+      "timestamp": 1778505540000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        4776
+      ],
+      "tokens": 94,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 94
+        }
+      }
+    }
+  ],
+  "lastUpdated": 1778505588281
+}

@@ -1,5 +1,6 @@
 import http from "node:http";
 import { FREE_MODELS, AUTO_FALLBACK_CHAIN, MODEL_IDS } from "./models.js";
+import { statsTracker } from "./stats.js";
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -85,6 +86,7 @@ async function callWithFallback(path, payload) {
 }
 
 async function handleChatCompletions(req, res) {
+  const startTime = Date.now();
   const raw = await readBody(req);
   let payload;
   try {
@@ -118,12 +120,32 @@ async function handleChatCompletions(req, res) {
       }
     }
     res.end();
+    const latency = Date.now() - startTime;
     log(`stream ${model} -> ${upstream.status}`);
+
+    // Record stats (estimate tokens for streaming)
+    statsTracker.recordRequest(model, latency, upstream.status, 0);
     return;
   }
 
   const r = await callWithFallback("/chat/completions", payload);
+  const latency = Date.now() - startTime;
   log(`chat ${payload.model || "auto"} -> ${r.triedModel} -> ${r.status}`);
+
+  // Extract token usage from response if available
+  let tokens = 0;
+  try {
+    const responseData = JSON.parse(r.body);
+    if (responseData.usage?.total_tokens) {
+      tokens = responseData.usage.total_tokens;
+    }
+  } catch {
+    // Ignore parse errors
+  }
+
+  // Record stats
+  statsTracker.recordRequest(r.triedModel, latency, r.status, tokens);
+
   res.writeHead(r.status, {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
