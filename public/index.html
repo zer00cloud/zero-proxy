@@ -945,13 +945,13 @@
       function openEndpointModal(modelId) {
         document.getElementById('endpoint-modal').classList.remove('hidden');
 
-        // Set local endpoint
-        const localEndpoint = `http://localhost:8787/v1/${modelId}/chat/completions`;
+        // Set local endpoint - just base URL without model path
+        const localEndpoint = `http://localhost:8787/v1`;
         document.getElementById('endpoint-local').textContent = localEndpoint;
 
         // Set tunnel endpoint
         if (tunnelActive && tunnelUrl) {
-          const tunnelEndpoint = `${tunnelUrl}/v1/${modelId}/chat/completions`;
+          const tunnelEndpoint = `${tunnelUrl}/v1`;
           document.getElementById('endpoint-tunnel').textContent = tunnelEndpoint;
           document.getElementById('tunnel-toggle-btn').classList.remove('bg-secondary/10', 'text-secondary');
           document.getElementById('tunnel-toggle-btn').classList.add('bg-error/10', 'text-error');
