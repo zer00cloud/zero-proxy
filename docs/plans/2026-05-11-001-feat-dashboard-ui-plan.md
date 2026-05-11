@@ -1,8 +1,9 @@
 ---
 title: "feat: Add ProxyZero futuristic dashboard UI"
 type: feat
-status: active
+status: completed
 created: 2026-05-11
+completed: 2026-05-11
 ---
 
 # feat: Add ProxyZero futuristic dashboard UI
