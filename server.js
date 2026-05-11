@@ -190,6 +190,9 @@ const server = http.createServer(async (req, res) => {
         endpoints: ["/v1/models", "/v1/chat/completions"],
       });
     }
+    if (req.method === "GET" && url.pathname === "/api/stats") {
+      return json(res, 200, statsTracker.getStats());
+    }
     if (req.method === "GET" && (url.pathname === "/v1/models" || url.pathname === "/models")) {
       return handleModels(res);
     }
