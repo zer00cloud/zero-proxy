@@ -310,6 +310,7 @@
       let pollTimer = null;
       let chartData = [];
       const MAX_CHART_POINTS = 16;
+      let disabledModels = new Set(JSON.parse(localStorage.getItem('disabledModels') || '[]'));
 
       // Fetch CSRF token
       async function fetchCSRFToken() {
@@ -337,9 +338,11 @@
             const model = data.data[i];
             const iconColor = iconColors[i % 3];
             const isFree = model.verified_anonymous;
+            const isDisabled = disabledModels.has(model.id);
 
             const card = document.createElement('div');
-            card.className = 'bg-surface-container border border-outline-variant/10 rounded-xl p-md flex flex-col gap-sm hover:border-primary/30 transition-all group';
+            card.className = `bg-surface-container border border-outline-variant/10 rounded-xl p-md flex flex-col gap-sm hover:border-primary/30 transition-all group ${isDisabled ? 'opacity-50' : ''}`;
+            card.dataset.modelId = model.id;
 
             card.innerHTML = `
               <div class="flex justify-between items-start">
@@ -384,7 +387,7 @@
                 <div class="flex items-center gap-2">
                   <label class="flex items-center cursor-pointer group">
                     <div class="relative">
-                      <input checked class="sr-only peer model-toggle" type="checkbox" data-model="${escapeHtml(model.id)}"/>
+                      <input ${isDisabled ? '' : 'checked'} class="sr-only peer model-toggle" type="checkbox" data-model="${escapeHtml(model.id)}" onchange="toggleModel('${escapeHtml(model.id)}', this)"/>
                       <div class="w-8 h-4 bg-surface-container-highest rounded-full border border-outline-variant/30 peer-checked:bg-secondary transition-colors"></div>
                       <div class="absolute left-0.5 top-0.5 w-3 h-3 bg-on-surface rounded-full transition-all peer-checked:translate-x-4 peer-checked:bg-on-secondary-fixed"></div>
                     </div>
@@ -520,7 +523,37 @@
       }
 
       // Quick test function (inline, no modal)
+      // Toggle model on/off
+      function toggleModel(modelId, checkbox) {
+        if (checkbox.checked) {
+          // Enable model
+          disabledModels.delete(modelId);
+          const card = document.querySelector(`[data-model-id="${modelId}"]`);
+          if (card) {
+            card.classList.remove('opacity-50');
+          }
+          showToast(`${modelId} enabled`);
+        } else {
+          // Disable model
+          disabledModels.add(modelId);
+          const card = document.querySelector(`[data-model-id="${modelId}"]`);
+          if (card) {
+            card.classList.add('opacity-50');
+          }
+          showToast(`${modelId} disabled`);
+        }
+
+        // Save to localStorage
+        localStorage.setItem('disabledModels', JSON.stringify([...disabledModels]));
+      }
+
       async function quickTest(modelId, buttonEl) {
+        // Check if model is disabled
+        if (disabledModels.has(modelId)) {
+          showToast(`${modelId} is disabled`, true);
+          return;
+        }
+
         const iconEl = buttonEl.querySelector('.test-icon');
         const originalContent = iconEl.innerHTML;
 

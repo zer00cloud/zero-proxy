@@ -26,6 +26,13 @@ function validateCSRF(req) {
   return token && validTokens.has(token);
 }
 
+// Check if request is from browser (needs CSRF) or API client (no CSRF needed)
+function needsCSRF(req) {
+  // If request has Referer or Origin header, it's from browser
+  const referer = req.headers['referer'] || req.headers['origin'];
+  return !!referer;
+}
+
 function log(...a) {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}]`, ...a);
@@ -227,6 +234,10 @@ async function handleModelSpecificRequest(req, res, modelId) {
     logResponse(400, { error: "invalid JSON body" });
     return json(res, 400, { error: { message: "invalid JSON body" } });
   }
+
+  // Check if model is disabled (from client-side localStorage)
+  // Note: This is client-side only check, server doesn't track disabled models
+  // Client should not send requests for disabled models
 
   // Override model with the one from URL
   payload.model = modelId;
@@ -431,8 +442,8 @@ const server = http.createServer(async (req, res) => {
       req.method === "POST" &&
       (url.pathname === "/v1/chat/completions" || url.pathname === "/chat/completions")
     ) {
-      // Validate CSRF token for dashboard requests
-      if (!validateCSRF(req)) {
+      // Validate CSRF token only for browser requests
+      if (needsCSRF(req) && !validateCSRF(req)) {
         logResponse(403, { error: "CSRF token required" });
         return json(res, 403, { error: { message: "CSRF token required" } });
       }
@@ -453,8 +464,8 @@ const server = http.createServer(async (req, res) => {
 
       log(`✅ Found model: ${model.id}`);
 
-      // Validate CSRF token
-      if (!validateCSRF(req)) {
+      // Validate CSRF token only for browser requests
+      if (needsCSRF(req) && !validateCSRF(req)) {
         logResponse(403, { error: "CSRF token required" });
         return json(res, 403, { error: { message: "CSRF token required" } });
       }
