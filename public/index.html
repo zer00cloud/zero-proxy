@@ -333,7 +333,7 @@
                         <span class="w-20 px-2.5 py-1 rounded bg-tertiary-container/10 text-tertiary-container text-[10px] font-bold text-center tracking-wider">TUNNEL</span>
                         <div class="flex-1 flex items-center bg-surface-container-low border border-outline-variant/20 rounded-lg px-sm py-2 gap-sm">
                             <code id="endpoint-tunnel" class="flex-1 text-body-sm font-mono text-on-surface truncate">Not active</code>
-                            <button onclick="copyEndpoint('tunnel')" class="text-on-surface-variant hover:text-primary transition-colors">
+                            <button id="tunnel-copy-btn" onclick="copyEndpoint('tunnel')" class="hidden text-on-surface-variant hover:text-primary transition-colors">
                                 <span class="material-symbols-outlined text-[20px]">content_copy</span>
                             </button>
                         </div>
@@ -950,15 +950,20 @@
         document.getElementById('endpoint-local').textContent = localEndpoint;
 
         // Set tunnel endpoint
+        const tunnelCopyBtn = document.getElementById('tunnel-copy-btn');
         if (tunnelActive && tunnelUrl) {
           const tunnelEndpoint = `${tunnelUrl}/v1`;
           document.getElementById('endpoint-tunnel').textContent = tunnelEndpoint;
           document.getElementById('tunnel-toggle-btn').classList.remove('bg-secondary/10', 'text-secondary');
           document.getElementById('tunnel-toggle-btn').classList.add('bg-error/10', 'text-error');
+          // Show copy button when tunnel is active
+          tunnelCopyBtn.classList.remove('hidden');
         } else {
           document.getElementById('endpoint-tunnel').textContent = 'Not active';
           document.getElementById('tunnel-toggle-btn').classList.remove('bg-error/10', 'text-error');
           document.getElementById('tunnel-toggle-btn').classList.add('bg-secondary/10', 'text-secondary');
+          // Hide copy button when tunnel is not active
+          tunnelCopyBtn.classList.add('hidden');
         }
 
         // Set model name
@@ -994,35 +999,64 @@
       async function toggleTunnel() {
         const btn = document.getElementById('tunnel-toggle-btn');
         const icon = btn.querySelector('.material-symbols-outlined');
+        const tunnelCopyBtn = document.getElementById('tunnel-copy-btn');
 
         icon.classList.add('animate-spin');
+        btn.disabled = true;
 
         try {
           if (tunnelActive) {
             // Stop tunnel
             showToast('Stopping tunnel...', false);
-            // Here you would call an API to stop the tunnel
-            // For now, just simulate it
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            tunnelActive = false;
-            tunnelUrl = '';
-            document.getElementById('endpoint-tunnel').textContent = 'Not active';
-            btn.classList.remove('bg-error/10', 'text-error');
-            btn.classList.add('bg-secondary/10', 'text-secondary');
-            showToast('Tunnel stopped');
-          } else {
-            // Start tunnel - check if cloudflared is available
-            showToast('Starting tunnel...', false);
-            // Here you would call an API to start the tunnel
-            // For now, check if tunnel is already running by detecting the URL
-            await detectTunnel();
 
-            if (tunnelActive) {
-              btn.classList.remove('bg-secondary/10', 'text-secondary');
-              btn.classList.add('bg-error/10', 'text-error');
-              showToast('Tunnel active');
+            // Call server to stop tunnel
+            const res = await fetch('/api/tunnel/stop', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+              }
+            });
+
+            if (res.ok) {
+              tunnelActive = false;
+              tunnelUrl = '';
+              document.getElementById('endpoint-tunnel').textContent = 'Not active';
+              btn.classList.remove('bg-error/10', 'text-error');
+              btn.classList.add('bg-secondary/10', 'text-secondary');
+              tunnelCopyBtn.classList.add('hidden');
+              showToast('Tunnel stopped');
             } else {
-              showToast('Tunnel not available', true);
+              showToast('Failed to stop tunnel', true);
+            }
+          } else {
+            // Start new tunnel
+            showToast('Creating new tunnel...', false);
+
+            // Call server to start new tunnel
+            const res = await fetch('/api/tunnel/start', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+              }
+            });
+
+            if (res.ok) {
+              const data = await res.json();
+              if (data.tunnel_url) {
+                tunnelActive = true;
+                tunnelUrl = data.tunnel_url;
+                document.getElementById('endpoint-tunnel').textContent = `${tunnelUrl}/v1`;
+                btn.classList.remove('bg-secondary/10', 'text-secondary');
+                btn.classList.add('bg-error/10', 'text-error');
+                tunnelCopyBtn.classList.remove('hidden');
+                showToast('Tunnel created successfully');
+              } else {
+                showToast('Failed to get tunnel URL', true);
+              }
+            } else {
+              showToast('Failed to start tunnel', true);
             }
           }
         } catch (err) {
@@ -1030,6 +1064,7 @@
           showToast('Toggle tunnel failed', true);
         } finally {
           icon.classList.remove('animate-spin');
+          btn.disabled = false;
         }
       }
 

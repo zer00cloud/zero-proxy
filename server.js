@@ -507,6 +507,84 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, { success: true });
       }
     }
+    // Tunnel management endpoints
+    if (url.pathname === "/api/tunnel/start" && req.method === "POST") {
+      log(`🚇 Starting new tunnel...`);
+      try {
+        const { spawn } = await import("node:child_process");
+
+        // Kill existing tunnel process if any
+        if (global.tunnelProcess) {
+          global.tunnelProcess.kill();
+          global.tunnelProcess = null;
+        }
+
+        // Start new cloudflared tunnel
+        const tunnelProcess = spawn("cloudflared", ["tunnel", "--url", `http://localhost:${PORT}`]);
+        global.tunnelProcess = tunnelProcess;
+
+        // Capture tunnel URL from output
+        let tunnelUrl = null;
+
+        const urlPromise = new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error("Tunnel start timeout")), 30000);
+
+          // Cloudflared outputs to stderr, not stdout
+          tunnelProcess.stderr.on("data", (data) => {
+            const output = data.toString();
+            log(`🚇 Tunnel output: ${output.trim()}`);
+
+            // Extract URL from cloudflared output
+            const match = output.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+            if (match && !tunnelUrl) {
+              tunnelUrl = match[0];
+              clearTimeout(timeout);
+              resolve(tunnelUrl);
+            }
+          });
+
+          tunnelProcess.stdout.on("data", (data) => {
+            log(`🚇 Tunnel stdout: ${data.toString().trim()}`);
+          });
+
+          tunnelProcess.on("error", (err) => {
+            clearTimeout(timeout);
+            reject(err);
+          });
+
+          tunnelProcess.on("exit", (code) => {
+            if (!tunnelUrl) {
+              clearTimeout(timeout);
+              reject(new Error(`Tunnel exited with code ${code}`));
+            }
+          });
+        });
+
+        const url = await urlPromise;
+        log(`✅ Tunnel created: ${url}`);
+
+        return json(res, 200, { success: true, tunnel_url: url });
+      } catch (err) {
+        log(`❌ Failed to start tunnel: ${err.message}`);
+        return json(res, 500, { error: { message: `Failed to start tunnel: ${err.message}` } });
+      }
+    }
+    if (url.pathname === "/api/tunnel/stop" && req.method === "POST") {
+      log(`🚇 Stopping tunnel...`);
+      try {
+        if (global.tunnelProcess) {
+          global.tunnelProcess.kill();
+          global.tunnelProcess = null;
+          log(`✅ Tunnel stopped`);
+          return json(res, 200, { success: true });
+        } else {
+          return json(res, 200, { success: true, message: "No tunnel running" });
+        }
+      } catch (err) {
+        log(`❌ Failed to stop tunnel: ${err.message}`);
+        return json(res, 500, { error: { message: `Failed to stop tunnel: ${err.message}` } });
+      }
+    }
     if (
       req.method === "POST" &&
       (url.pathname === "/v1/chat/completions" || url.pathname === "/chat/completions")
