@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { FREE_MODELS, AUTO_FALLBACK_CHAIN, MODEL_IDS } from "./models.js";
 import { statsTracker } from "./stats.js";
 import { apiKeyManager } from "./api-keys.js";
+import { disabledModelsManager } from "./disabled-models.js";
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -117,8 +118,25 @@ async function callWithFallback(path, payload) {
     chain = [requested];
   }
 
+  // Check if requested model is disabled
+  if (requested && disabledModelsManager.isDisabled(requested)) {
+    log(`🚫 Requested model ${requested} is disabled globally`);
+    return {
+      status: 403,
+      headers: new Headers(),
+      body: JSON.stringify({ error: { message: `Model ${requested} is disabled` } }),
+      triedModel: requested
+    };
+  }
+
   let last;
   for (const model of chain) {
+    // Skip disabled models in fallback chain
+    if (disabledModelsManager.isDisabled(model)) {
+      log(`⏭️  Skipping disabled model: ${model}`);
+      continue;
+    }
+
     const r = await callUpstream(path, { ...payload, model });
     last = { ...r, triedModel: model };
     if (r.status >= 200 && r.status < 300) return last;
@@ -129,6 +147,17 @@ async function callWithFallback(path, payload) {
     }
     log(`fallback: ${model} -> HTTP ${r.status}, trying next`);
   }
+
+  // If we get here and have no result, all models failed or were disabled
+  if (!last) {
+    return {
+      status: 403,
+      headers: new Headers(),
+      body: JSON.stringify({ error: { message: "All available models are disabled" } }),
+      triedModel: requested || "auto"
+    };
+  }
+
   return last;
 }
 
@@ -150,6 +179,14 @@ async function handleChatCompletions(req, res) {
     const model = payload.model && MODEL_IDS.has(payload.model)
       ? payload.model
       : AUTO_FALLBACK_CHAIN[0];
+
+    // Check if model is disabled
+    if (disabledModelsManager.isDisabled(model)) {
+      log(`🚫 Model ${model} is disabled globally`);
+      logResponse(403, { error: `Model ${model} is disabled` });
+      return json(res, 403, { error: { message: `Model ${model} is disabled` } });
+    }
+
     const headers = { "Content-Type": "application/json" };
 
     // Check if model has a saved API key
@@ -226,6 +263,13 @@ async function handleModelSpecificRequest(req, res, modelId) {
   const startTime = Date.now();
   log(`🎯 Model-specific request: ${modelId}`);
 
+  // Check if model is disabled globally
+  if (disabledModelsManager.isDisabled(modelId)) {
+    log(`🚫 Model ${modelId} is disabled globally`);
+    logResponse(403, { error: `Model ${modelId} is disabled` });
+    return json(res, 403, { error: { message: `Model ${modelId} is disabled` } });
+  }
+
   const raw = await readBody(req);
   let payload;
   try {
@@ -234,10 +278,6 @@ async function handleModelSpecificRequest(req, res, modelId) {
     logResponse(400, { error: "invalid JSON body" });
     return json(res, 400, { error: { message: "invalid JSON body" } });
   }
-
-  // Check if model is disabled (from client-side localStorage)
-  // Note: This is client-side only check, server doesn't track disabled models
-  // Client should not send requests for disabled models
 
   // Override model with the one from URL
   payload.model = modelId;
@@ -435,6 +475,33 @@ const server = http.createServer(async (req, res) => {
         // Delete API key
         apiKeyManager.deleteKey(modelId);
         log(`🗑️  API key deleted for ${modelId}`);
+        return json(res, 200, { success: true });
+      }
+    }
+    // Disabled models management endpoints
+    if (url.pathname === "/api/disabled-models") {
+      if (req.method === "GET") {
+        // Get list of disabled models
+        return json(res, 200, { disabled: disabledModelsManager.getAll() });
+      }
+    }
+    if (url.pathname.startsWith("/api/models/") && url.pathname.endsWith("/disable")) {
+      const modelId = decodeURIComponent(url.pathname.split('/')[3]);
+
+      if (req.method === "POST") {
+        // Disable model
+        disabledModelsManager.disable(modelId);
+        log(`🚫 Model ${modelId} disabled globally`);
+        return json(res, 200, { success: true });
+      }
+    }
+    if (url.pathname.startsWith("/api/models/") && url.pathname.endsWith("/enable")) {
+      const modelId = decodeURIComponent(url.pathname.split('/')[3]);
+
+      if (req.method === "POST") {
+        // Enable model
+        disabledModelsManager.enable(modelId);
+        log(`✅ Model ${modelId} enabled globally`);
         return json(res, 200, { success: true });
       }
     }

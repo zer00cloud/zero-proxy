@@ -524,7 +524,351 @@
           "tokens": 57
         }
       }
+    },
+    {
+      "timestamp": 1778515620000,
+      "count": 3,
+      "errors": 1,
+      "latencies": [
+        8327,
+        4813,
+        190
+      ],
+      "tokens": 413,
+      "models": {
+        "big-pickle": {
+          "count": 1,
+          "tokens": 375
+        },
+        "nemotron-3-super-free": {
+          "count": 1,
+          "tokens": 38
+        },
+        "glm-4.7-free": {
+          "count": 1,
+          "tokens": 0
+        }
+      }
+    },
+    {
+      "timestamp": 1778515680000,
+      "count": 6,
+      "errors": 4,
+      "latencies": [
+        601,
+        541,
+        186,
+        185,
+        9813,
+        3521
+      ],
+      "tokens": 595,
+      "models": {
+        "glm-4.7-free": {
+          "count": 1,
+          "tokens": 0
+        },
+        "kimi-k2.5-free": {
+          "count": 1,
+          "tokens": 0
+        },
+        "glm-5-free": {
+          "count": 1,
+          "tokens": 0
+        },
+        "minimax-m2.1-free": {
+          "count": 1,
+          "tokens": 0
+        },
+        "big-pickle": {
+          "count": 1,
+          "tokens": 479
+        },
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 116
+        }
+      }
+    },
+    {
+      "timestamp": 1778515800000,
+      "count": 3,
+      "errors": 0,
+      "latencies": [
+        1494,
+        2932,
+        19646
+      ],
+      "tokens": 175,
+      "models": {
+        "nemotron-3-super-free": {
+          "count": 3,
+          "tokens": 175
+        }
+      }
+    },
+    {
+      "timestamp": 1778515860000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        6486
+      ],
+      "tokens": 209,
+      "models": {
+        "nemotron-3-super-free": {
+          "count": 1,
+          "tokens": 209
+        }
+      }
+    },
+    {
+      "timestamp": 1778516280000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        3770
+      ],
+      "tokens": 105,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 105
+        }
+      }
+    },
+    {
+      "timestamp": 1778516460000,
+      "count": 2,
+      "errors": 0,
+      "latencies": [
+        8021,
+        8404
+      ],
+      "tokens": 751,
+      "models": {
+        "big-pickle": {
+          "count": 1,
+          "tokens": 491
+        },
+        "nemotron-3-super-free": {
+          "count": 1,
+          "tokens": 260
+        }
+      }
+    },
+    {
+      "timestamp": 1778516640000,
+      "count": 2,
+      "errors": 0,
+      "latencies": [
+        4321,
+        2116
+      ],
+      "tokens": 212,
+      "models": {
+        "nemotron-3-super-free": {
+          "count": 2,
+          "tokens": 212
+        }
+      }
+    },
+    {
+      "timestamp": 1778516760000,
+      "count": 3,
+      "errors": 0,
+      "latencies": [
+        23239,
+        4071,
+        13392
+      ],
+      "tokens": 582,
+      "models": {
+        "nemotron-3-super-free": {
+          "count": 3,
+          "tokens": 582
+        }
+      }
+    },
+    {
+      "timestamp": 1778517000000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        10941
+      ],
+      "tokens": 153,
+      "models": {
+        "nemotron-3-super-free": {
+          "count": 1,
+          "tokens": 153
+        }
+      }
+    },
+    {
+      "timestamp": 1778517060000,
+      "count": 2,
+      "errors": 0,
+      "latencies": [
+        27440,
+        16791
+      ],
+      "tokens": 756,
+      "models": {
+        "nemotron-3-super-free": {
+          "count": 2,
+          "tokens": 756
+        }
+      }
+    },
+    {
+      "timestamp": 1778517360000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        4709
+      ],
+      "tokens": 134,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 134
+        }
+      }
+    },
+    {
+      "timestamp": 1778517840000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        9879
+      ],
+      "tokens": 614,
+      "models": {
+        "big-pickle": {
+          "count": 1,
+          "tokens": 614
+        }
+      }
+    },
+    {
+      "timestamp": 1778518440000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        9653
+      ],
+      "tokens": 531,
+      "models": {
+        "big-pickle": {
+          "count": 1,
+          "tokens": 531
+        }
+      }
+    },
+    {
+      "timestamp": 1778519340000,
+      "count": 2,
+      "errors": 0,
+      "latencies": [
+        13618,
+        13984
+      ],
+      "tokens": 678,
+      "models": {
+        "nemotron-3-super-free": {
+          "count": 2,
+          "tokens": 678
+        }
+      }
+    },
+    {
+      "timestamp": 1778519460000,
+      "count": 4,
+      "errors": 1,
+      "latencies": [
+        4179,
+        2282,
+        3228,
+        1
+      ],
+      "tokens": 342,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 3,
+          "tokens": 342
+        },
+        "auto": {
+          "count": 1,
+          "tokens": 0
+        }
+      }
+    },
+    {
+      "timestamp": 1778519580000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        6433
+      ],
+      "tokens": 293,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 293
+        }
+      }
+    },
+    {
+      "timestamp": 1778519700000,
+      "count": 5,
+      "errors": 4,
+      "latencies": [
+        71,
+        1,
+        0,
+        0,
+        5562
+      ],
+      "tokens": 230,
+      "models": {
+        "nemotron-3-super-free": {
+          "count": 5,
+          "tokens": 230
+        }
+      }
+    },
+    {
+      "timestamp": 1778519760000,
+      "count": 2,
+      "errors": 1,
+      "latencies": [
+        24725,
+        1
+      ],
+      "tokens": 1425,
+      "models": {
+        "big-pickle": {
+          "count": 2,
+          "tokens": 1425
+        }
+      }
+    },
+    {
+      "timestamp": 1778519880000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        14460
+      ],
+      "tokens": 763,
+      "models": {
+        "big-pickle": {
+          "count": 1,
+          "tokens": 763
+        }
+      }
     }
   ],
-  "lastUpdated": 1778515587229
+  "lastUpdated": 1778519904948
 }

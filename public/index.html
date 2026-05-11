@@ -310,7 +310,18 @@
       let pollTimer = null;
       let chartData = [];
       const MAX_CHART_POINTS = 16;
-      let disabledModels = new Set(JSON.parse(localStorage.getItem('disabledModels') || '[]'));
+      let disabledModels = new Set();
+
+      // Load disabled models from server
+      async function loadDisabledModels() {
+        try {
+          const res = await fetch('/api/disabled-models');
+          const data = await res.json();
+          disabledModels = new Set(data.disabled || []);
+        } catch (err) {
+          console.error('Failed to load disabled models:', err);
+        }
+      }
 
       // Fetch CSRF token
       async function fetchCSRFToken() {
@@ -524,27 +535,51 @@
 
       // Quick test function (inline, no modal)
       // Toggle model on/off
-      function toggleModel(modelId, checkbox) {
-        if (checkbox.checked) {
-          // Enable model
-          disabledModels.delete(modelId);
-          const card = document.querySelector(`[data-model-id="${modelId}"]`);
-          if (card) {
-            card.classList.remove('opacity-50');
-          }
-          showToast(`${modelId} enabled`);
-        } else {
-          // Disable model
-          disabledModels.add(modelId);
-          const card = document.querySelector(`[data-model-id="${modelId}"]`);
-          if (card) {
-            card.classList.add('opacity-50');
-          }
-          showToast(`${modelId} disabled`);
-        }
+      async function toggleModel(modelId, checkbox) {
+        try {
+          if (checkbox.checked) {
+            // Enable model
+            const res = await fetch(`/api/models/${encodeURIComponent(modelId)}/enable`, {
+              method: 'POST'
+            });
 
-        // Save to localStorage
-        localStorage.setItem('disabledModels', JSON.stringify([...disabledModels]));
+            if (res.ok) {
+              disabledModels.delete(modelId);
+              const card = document.querySelector(`[data-model-id="${modelId}"]`);
+              if (card) {
+                card.classList.remove('opacity-50');
+              }
+              showToast(`${modelId} enabled`);
+            } else {
+              // Revert checkbox if failed
+              checkbox.checked = false;
+              showToast('Failed to enable model', true);
+            }
+          } else {
+            // Disable model
+            const res = await fetch(`/api/models/${encodeURIComponent(modelId)}/disable`, {
+              method: 'POST'
+            });
+
+            if (res.ok) {
+              disabledModels.add(modelId);
+              const card = document.querySelector(`[data-model-id="${modelId}"]`);
+              if (card) {
+                card.classList.add('opacity-50');
+              }
+              showToast(`${modelId} disabled`);
+            } else {
+              // Revert checkbox if failed
+              checkbox.checked = true;
+              showToast('Failed to disable model', true);
+            }
+          }
+        } catch (err) {
+          console.error('Toggle model failed:', err);
+          // Revert checkbox
+          checkbox.checked = !checkbox.checked;
+          showToast('Toggle failed', true);
+        }
       }
 
       async function quickTest(modelId, buttonEl) {
@@ -854,6 +889,7 @@
       // Initialize
       async function init() {
         await fetchCSRFToken();
+        await loadDisabledModels();
         await loadModels();
         await updateStats();
         pollTimer = setInterval(updateStats, pollInterval);
