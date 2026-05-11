@@ -517,7 +517,7 @@ const server = http.createServer(async (req, res) => {
 
         // Kill ALL existing cloudflared tunnels for this port first
         try {
-          await execAsync(`pkill -f "cloudflared tunnel --url http://localhost:${PORT}"`);
+          await execAsync(`pkill -f "cloudflared tunnel --url http://127.0.0.1:${PORT}"`);
           log(`🧹 Killed all existing tunnels`);
           await new Promise(resolve => setTimeout(resolve, 1000));
         } catch (err) {
@@ -536,8 +536,8 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
-        // Start new cloudflared tunnel
-        const tunnelProcess = spawn("cloudflared", ["tunnel", "--url", `http://localhost:${PORT}`]);
+        // Start new cloudflared tunnel (use 127.0.0.1 instead of localhost)
+        const tunnelProcess = spawn("cloudflared", ["tunnel", "--url", `http://127.0.0.1:${PORT}`]);
         global.tunnelProcess = tunnelProcess;
 
         // Capture tunnel URL from output
@@ -606,7 +606,7 @@ const server = http.createServer(async (req, res) => {
 
         // Kill ALL cloudflared tunnels for this port
         try {
-          await execAsync(`pkill -f "cloudflared tunnel --url http://localhost:${PORT}"`);
+          await execAsync(`pkill -f "cloudflared tunnel --url http://127.0.0.1:${PORT}"`);
           log(`✅ Killed all cloudflared tunnels for port ${PORT}`);
         } catch (err) {
           // No tunnels running, that's fine
