@@ -6,22 +6,27 @@
     <title>ProxyZero Dashboard</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist:wght@400;500;600&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-    <script>
+    <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
             theme: {
                 extend: {
-                    colors: {
+                    "colors": {
+                        "tertiary": "#ffb783",
                         "surface-dim": "#12131a",
                         "surface-bright": "#383941",
+                        "on-tertiary-fixed": "#301400",
                         "surface-tint": "#c0c1ff",
                         "primary-fixed": "#e1e0ff",
                         "on-primary": "#1000a9",
+                        "tertiary-container": "#d97721",
                         "surface": "#12131a",
+                        "on-tertiary-container": "#452000",
                         "surface-container-lowest": "#0d0e15",
                         "surface-container-highest": "#33343c",
                         "inverse-primary": "#494bd6",
                         "secondary-fixed": "#acedff",
+                        "on-tertiary": "#4f2500",
                         "on-error": "#690005",
                         "surface-variant": "#33343c",
                         "secondary-fixed-dim": "#4cd7f6",
@@ -34,22 +39,67 @@
                         "primary": "#c0c1ff",
                         "background": "#12131a",
                         "on-surface": "#e3e1ec",
+                        "on-secondary-fixed-variant": "#004e5c",
                         "on-secondary-container": "#00424e",
                         "surface-container-low": "#1a1b22",
                         "error": "#ffb4ab",
+                        "on-primary-fixed-variant": "#2f2ebe",
                         "secondary-container": "#03b5d3",
                         "on-background": "#e3e1ec",
+                        "tertiary-fixed": "#ffdcc5",
                         "inverse-on-surface": "#2f3038",
+                        "tertiary-fixed-dim": "#ffb783",
                         "on-primary-container": "#0d0096",
+                        "on-primary-fixed": "#07006c",
+                        "on-secondary-fixed": "#001f26",
+                        "on-tertiary-fixed-variant": "#703700",
                         "on-surface-variant": "#c7c4d7",
                         "error-container": "#93000a",
                         "on-secondary": "#003640",
                         "primary-fixed-dim": "#c0c1ff",
                         "on-error-container": "#ffdad6",
                         "inverse-surface": "#e3e1ec"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "md": "24px",
+                        "xs": "4px",
+                        "sm": "12px",
+                        "xl": "64px",
+                        "base": "8px",
+                        "lg": "40px",
+                        "gutter": "24px",
+                        "margin": "32px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-sm": ["Geist"],
+                        "headline-lg-mobile": ["Inter"],
+                        "label-md": ["Geist"],
+                        "body-lg": ["Inter"],
+                        "display-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                        "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "600"}],
+                        "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.02em", "fontWeight": "500"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                        "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
                     }
-                }
-            }
+                },
+            },
         }
     </script>
     <style>
@@ -61,414 +111,454 @@
         }
     </style>
 </head>
-<body class="bg-background text-on-background min-h-screen flex flex-col">
-    <!-- Header -->
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col">
+    <!-- TopNavBar -->
     <header class="bg-surface-container border-b border-outline-variant/10 sticky top-0 z-50">
-        <div class="flex justify-between items-center w-full px-6 h-16 max-w-7xl mx-auto">
-            <div class="text-2xl font-bold text-primary">ProxyZero</div>
-            <div class="flex items-center gap-4">
-                <span id="polling-indicator" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-container/20 text-secondary text-xs font-semibold">
-                    <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
-                    <span id="polling-text">Live (10s)</span>
-                </span>
-            </div>
+        <div class="flex items-center w-full px-gutter h-16 max-w-7xl mx-auto justify-center">
+            <div class="text-headline-md font-headline-md font-bold text-primary">ProxyZero</div>
         </div>
     </header>
 
-    <!-- Main Content -->
-    <main class="flex-1 overflow-y-auto p-6 bg-background">
-        <div class="mx-auto space-y-6 max-w-7xl">
-            <!-- Stats Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div class="bg-surface-container border border-outline-variant/10 rounded-xl p-4">
-                    <div class="text-on-surface-variant text-sm">Total Requests</div>
-                    <div id="stat-total-requests" class="text-3xl font-bold text-primary mt-2">0</div>
-                </div>
-                <div class="bg-surface-container border border-outline-variant/10 rounded-xl p-4">
-                    <div class="text-on-surface-variant text-sm">Requests/min</div>
-                    <div id="stat-requests-per-min" class="text-3xl font-bold text-secondary mt-2">0</div>
-                </div>
-                <div class="bg-surface-container border border-outline-variant/10 rounded-xl p-4">
-                    <div class="text-on-surface-variant text-sm">Avg Latency</div>
-                    <div id="stat-avg-latency" class="text-3xl font-bold text-primary mt-2">0ms</div>
-                </div>
-                <div class="bg-surface-container border border-outline-variant/10 rounded-xl p-4">
-                    <div class="text-on-surface-variant text-sm">Errors</div>
-                    <div id="stat-errors" class="text-3xl font-bold text-error mt-2">0</div>
-                </div>
-            </div>
-
-            <!-- 16-Model Vertical Chart -->
-            <section class="bg-surface-container-low border border-outline-variant/10 rounded-xl overflow-hidden">
-                <div class="px-6 py-4 border-b border-outline-variant/10">
-                    <h2 class="text-xl font-semibold text-on-surface">Model Usage Distribution</h2>
-                    <p class="text-sm text-on-surface-variant">Request count per model (16 models)</p>
-                </div>
-                <div class="p-6 h-64 relative">
-                    <div id="model-chart" class="absolute inset-x-6 bottom-6 top-6 flex items-end justify-between gap-1">
-                        <!-- Chart bars will be inserted here -->
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto p-gutter lg:p-margin bg-background pb-20 md:pb-0">
+            <div class="mx-auto space-y-gutter max-w-7xl">
+                <!-- Monitoring Graph Section -->
+                <section class="bg-surface-container-low border border-outline-variant/10 rounded-xl overflow-hidden">
+                    <div class="px-md py-sm border-b border-outline-variant/10 flex justify-between items-center">
+                        <div>
+                            <h2 class="font-headline-md text-headline-md text-on-surface">Usage Statistics</h2>
+                            <p class="font-label-sm text-label-sm text-on-surface-variant">Real-time API traffic monitoring across global clusters</p>
+                        </div>
+                        <div class="flex gap-xs">
+                            <span id="live-indicator" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-container/20 text-secondary text-xs font-semibold">
+                                <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
+                                Live Sync
+                            </span>
+                        </div>
                     </div>
-                    <div class="absolute inset-0 chart-gradient pointer-events-none"></div>
-                </div>
-            </section>
+                    <div class="p-md h-64 relative">
+                        <!-- 16-Model Chart -->
+                        <div id="model-chart" class="absolute inset-x-md bottom-md top-md flex items-end justify-between gap-2">
+                            <!-- Chart bars will be inserted here -->
+                        </div>
+                        <div class="absolute inset-0 chart-gradient pointer-events-none"></div>
+                        <div class="absolute inset-x-0 top-0 h-full flex flex-col justify-between py-md pointer-events-none opacity-10">
+                            <div class="border-t border-on-surface"></div>
+                            <div class="border-t border-on-surface"></div>
+                            <div class="border-t border-on-surface"></div>
+                            <div class="border-t border-on-surface"></div>
+                        </div>
+                    </div>
+                </section>
 
-            <!-- Model Cards -->
-            <div id="models-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                <!-- Model cards will be inserted here -->
+                <!-- AI Models Cards Section -->
+                <div id="models-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-gutter">
+                    <!-- Model cards will be inserted here -->
+                </div>
+
+                <!-- Bottom Status Bar -->
+                <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-md">
+                    <div class="bg-surface-container-low p-md rounded-xl border border-outline-variant/10 flex items-center gap-md">
+                        <div class="w-10 h-10 rounded-full bg-secondary/10 flex items-center justify-center text-secondary">
+                            <span class="material-symbols-outlined">hub</span>
+                        </div>
+                        <div>
+                            <div id="stat-total-requests" class="text-[24px] font-bold text-on-surface">0</div>
+                            <div class="text-label-sm text-on-surface-variant">Total Requests</div>
+                        </div>
+                    </div>
+                    <div class="bg-surface-container-low p-md rounded-xl border border-outline-variant/10 flex items-center gap-md">
+                        <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                            <span class="material-symbols-outlined">speed</span>
+                        </div>
+                        <div>
+                            <div id="stat-avg-latency" class="text-[24px] font-bold text-on-surface">0ms</div>
+                            <div class="text-label-sm text-on-surface-variant">Avg Latency</div>
+                        </div>
+                    </div>
+                    <div class="bg-surface-container-low p-md rounded-xl border border-outline-variant/10 flex items-center gap-md">
+                        <div class="w-10 h-10 rounded-full bg-tertiary/10 flex items-center justify-center text-tertiary">
+                            <span class="material-symbols-outlined">account_balance_wallet</span>
+                        </div>
+                        <div>
+                            <div id="stat-tokens" class="text-[24px] font-bold text-on-surface">0</div>
+                            <div class="text-label-sm text-on-surface-variant">Tokens Used</div>
+                        </div>
+                    </div>
+                    <div class="bg-surface-container-low p-md rounded-xl border border-outline-variant/10 flex items-center gap-md">
+                        <div class="w-10 h-10 rounded-full bg-error/10 flex items-center justify-center text-error">
+                            <span class="material-symbols-outlined">warning</span>
+                        </div>
+                        <div>
+                            <div id="stat-errors" class="text-[24px] font-bold text-on-surface">0</div>
+                            <div class="text-label-sm text-on-surface-variant">Errors</div>
+                        </div>
+                    </div>
+                </section>
             </div>
-        </div>
-    </main>
+        </main>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <nav class="md:hidden flex justify-around items-center bg-surface-container border-t border-outline-variant/10 h-16 fixed bottom-0 left-0 w-full z-50">
+        <button class="flex flex-col items-center gap-1 text-primary">
+            <span class="material-symbols-outlined">dashboard</span>
+            <span class="text-[10px] font-medium">Dashboard</span>
+        </button>
+        <button class="flex flex-col items-center gap-1 text-on-surface-variant">
+            <span class="material-symbols-outlined">router</span>
+            <span class="text-[10px] font-medium">Proxies</span>
+        </button>
+        <button class="flex flex-col items-center gap-1 text-on-surface-variant">
+            <span class="material-symbols-outlined">bar_chart</span>
+            <span class="text-[10px] font-medium">Usage</span>
+        </button>
+        <button class="flex flex-col items-center gap-1 text-on-surface-variant">
+            <span class="material-symbols-outlined">settings</span>
+            <span class="text-[10px] font-medium">Settings</span>
+        </button>
+    </nav>
 
     <!-- Test Modal -->
     <div id="test-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div class="bg-surface-container border border-outline-variant/10 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div class="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
-                <h3 class="text-xl font-semibold text-on-surface">Test Model: <span id="modal-model-name"></span></h3>
+            <div class="px-md py-sm border-b border-outline-variant/10 flex justify-between items-center">
+                <h3 class="font-headline-md text-headline-md text-on-surface">Test Model: <span id="modal-model-name"></span></h3>
                 <button id="modal-close" class="p-2 hover:bg-surface-variant rounded-lg transition-colors">
                     <span class="material-symbols-outlined text-on-surface-variant">close</span>
                 </button>
             </div>
-            <div class="p-6 space-y-4">
+            <div class="p-md space-y-sm">
                 <div>
-                    <label class="block text-sm font-medium text-on-surface-variant mb-2">Your Prompt</label>
-                    <textarea id="test-prompt" class="w-full px-4 py-3 bg-surface-container-high border border-outline-variant/20 rounded-lg text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none" rows="4" placeholder="Hello, who are you?">Hello, who are you?</textarea>
+                    <label class="block font-label-md text-label-md text-on-surface-variant mb-xs">Your Prompt</label>
+                    <textarea id="test-prompt" class="w-full px-sm py-sm bg-surface-container-high border border-outline-variant/20 rounded-lg text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none" rows="4" placeholder="Hello, who are you?">Hello, who are you?</textarea>
                 </div>
-                <button id="test-submit" class="w-full py-3 rounded-lg bg-primary text-on-primary font-bold hover:opacity-90 active:scale-95 transition-all">
+                <button id="test-submit" class="w-full py-2.5 rounded-lg bg-primary text-on-primary font-bold font-label-md hover:opacity-90 active:scale-95 transition-all">
                     Send Request
                 </button>
                 <div id="test-loading" class="hidden text-center text-on-surface-variant">
                     <span class="inline-block animate-spin material-symbols-outlined">progress_activity</span>
-                    <span class="ml-2">Sending request...</span>
+                    <span class="ml-2 font-body-sm">Sending request...</span>
                 </div>
                 <div id="test-response" class="hidden">
-                    <label class="block text-sm font-medium text-on-surface-variant mb-2">Response</label>
-                    <div id="test-response-content" class="px-4 py-3 bg-surface-container-high border border-outline-variant/20 rounded-lg text-on-surface whitespace-pre-wrap"></div>
+                    <label class="block font-label-md text-label-md text-on-surface-variant mb-xs">Response</label>
+                    <div id="test-response-content" class="px-sm py-sm bg-surface-container-high border border-outline-variant/20 rounded-lg text-on-surface font-body-sm whitespace-pre-wrap max-h-96 overflow-y-auto"></div>
                 </div>
-                <div id="test-error" class="hidden px-4 py-3 bg-error-container/20 border border-error/20 rounded-lg text-error"></div>
+                <div id="test-error" class="hidden px-sm py-sm bg-error-container/20 border border-error/20 rounded-lg text-error font-body-sm"></div>
             </div>
         </div>
     </div>
 
     <script>
-        // CSRF token
-        let csrfToken = null;
 
-        // Fetch CSRF token from server
-        async function fetchCSRFToken() {
-            try {
-                const res = await fetch('/api/csrf-token');
-                const data = await res.json();
-                csrfToken = data.token;
-            } catch (err) {
-                console.error('Failed to fetch CSRF token:', err);
+    <script>
+      // State
+      let csrfToken = null;
+      let pollInterval = 10000; // Start with 10s
+      let pollTimer = null;
+      let chartData = [];
+      const MAX_CHART_POINTS = 16;
+
+      // Fetch CSRF token
+      async function fetchCSRFToken() {
+        try {
+          const res = await fetch('/api/csrf-token');
+          const data = await res.json();
+          csrfToken = data.token;
+        } catch (err) {
+          console.error('Failed to fetch CSRF token:', err);
+        }
+      }
+
+      // Load models and render cards
+      async function loadModels() {
+        try {
+          const res = await fetch('/v1/models');
+          const data = await res.json();
+          
+          const grid = document.getElementById('models-grid');
+          grid.innerHTML = '';
+          
+          for (const model of data.data) {
+            const card = document.createElement('div');
+            card.className = 'bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-purple-500 transition-colors';
+            
+            const isFree = model.verified_anonymous;
+            const statusColor = isFree ? 'text-green-400' : 'text-yellow-400';
+            const statusText = isFree ? 'Free' : 'API Key';
+            
+            card.innerHTML = `
+              <div class="flex items-start justify-between mb-3">
+                <div class="flex-1">
+                  <h3 class="text-white font-medium mb-1 model-name">${escapeHtml(model.id)}</h3>
+                  <div class="flex items-center gap-2 text-xs">
+                    <span class="${statusColor}">${statusText}</span>
+                    <span class="text-gray-500">•</span>
+                    <span class="text-gray-400">${model.context_length.toLocaleString()} ctx</span>
+                  </div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" class="sr-only peer model-toggle" data-model="${escapeHtml(model.id)}" checked>
+                  <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                </label>
+              </div>
+              
+              <div class="flex items-center justify-between text-xs">
+                <div class="flex items-center gap-4">
+                  <div>
+                    <span class="text-gray-500">Requests:</span>
+                    <span class="text-white model-requests">0</span>
+                  </div>
+                  <div>
+                    <span class="text-gray-500">Latency:</span>
+                    <span class="text-cyan-400 model-latency">0ms</span>
+                  </div>
+                </div>
+                ${!isFree ? `<button class="text-purple-400 hover:text-purple-300 transition-colors api-key-btn" data-model="${escapeHtml(model.id)}">
+                  <span class="material-symbols-outlined text-sm">key</span>
+                </button>` : ''}
+              </div>
+            `;
+            
+            grid.appendChild(card);
+          }
+          
+          // Attach event listeners
+          document.querySelectorAll('.api-key-btn').forEach(btn => {
+            btn.addEventListener('click', () => openAPIKeyModal(btn.dataset.model));
+          });
+          
+        } catch (err) {
+          console.error('Failed to load models:', err);
+        }
+      }
+
+      // Update statistics
+      async function updateStats() {
+        try {
+          const res = await fetch('/api/stats');
+          const stats = await res.json();
+          
+          // Update bottom status bar
+          document.getElementById('total-requests').textContent = stats.total_requests.toLocaleString();
+          document.getElementById('avg-latency').textContent = Math.round(stats.avg_latency_ms) + 'ms';
+          document.getElementById('total-tokens').textContent = stats.total_tokens.toLocaleString();
+          document.getElementById('total-errors').textContent = stats.total_errors.toLocaleString();
+          
+          // Update per-model stats
+          for (const [modelId, modelStats] of Object.entries(stats.per_model)) {
+            const cards = document.querySelectorAll('.model-name');
+            for (const nameEl of cards) {
+              if (nameEl.textContent === modelId) {
+                const card = nameEl.closest('.bg-gray-800');
+                card.querySelector('.model-requests').textContent = modelStats.requests.toLocaleString();
+                card.querySelector('.model-latency').textContent = Math.round(modelStats.avg_latency_ms) + 'ms';
+              }
             }
+          }
+          
+          // Update chart data
+          const tokensPerMin = stats.tokens_per_minute || 0;
+          chartData.push(tokensPerMin);
+          if (chartData.length > MAX_CHART_POINTS) {
+            chartData.shift();
+          }
+          renderChart();
+          
+          // Adaptive polling
+          updatePollInterval(tokensPerMin);
+          
+        } catch (err) {
+          console.error('Failed to update stats:', err);
         }
+      }
 
-        // Adaptive polling state
-        let pollInterval = 10000; // Default 10s
-        let statsTimer = null;
-
-        // Load models on page load
-        async function loadModels() {
-            try {
-                const res = await fetch('/v1/models');
-                const data = await res.json();
-                renderModelCards(data.data);
-            } catch (err) {
-                console.error('Failed to load models:', err);
-            }
-        }
-
-        // Render model cards
-        function renderModelCards(models) {
-            const container = document.getElementById('models-container');
-            container.innerHTML = '';
-
-            models.forEach(model => {
-                const card = document.createElement('div');
-                card.className = 'bg-surface-container border border-outline-variant/10 rounded-xl p-6 flex flex-col gap-4 hover:border-primary/30 transition-all';
-
-                const isFree = model.verified_anonymous;
-
-                card.innerHTML = `
-                    <div class="flex justify-between items-start">
-                        <div class="flex items-center gap-2">
-                            <div class="p-2 rounded-lg bg-surface-container-high">
-                                <span class="material-symbols-outlined text-primary">smart_toy</span>
-                            </div>
-                            ${isFree ? '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-secondary/10 text-secondary border border-secondary/20">FREE</span>' : ''}
-                        </div>
-                    </div>
-                    <div>
-                        <h3 class="text-lg font-semibold text-on-surface leading-tight">${escapeHtml(model.id)}</h3>
-                        <p class="text-sm text-on-surface-variant mt-1">Owner: ${escapeHtml(model.owned_by)}</p>
-                    </div>
-                    <div class="space-y-2">
-                        <div class="flex justify-between items-center py-1.5 border-b border-outline-variant/5">
-                            <span class="text-sm text-on-surface-variant">Context</span>
-                            <span class="text-sm text-on-surface font-semibold">${model.context_length.toLocaleString()}</span>
-                        </div>
-                        <div class="flex justify-between items-center py-1.5 border-b border-outline-variant/5">
-                            <span class="text-sm text-on-surface-variant">Max Output</span>
-                            <span class="text-sm text-on-surface font-semibold">${model.max_output.toLocaleString()}</span>
-                        </div>
-                    </div>
-                    ${!isFree ? `
-                    <div class="space-y-2">
-                        <label class="block text-sm font-medium text-on-surface-variant">API Key</label>
-                        <div class="flex gap-2">
-                            <input type="password" id="key-${escapeHtml(model.id)}" class="flex-1 px-3 py-2 bg-surface-container-high border border-outline-variant/20 rounded-lg text-on-surface text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none" placeholder="Enter API key">
-                            <button onclick="saveAPIKey('${escapeHtml(model.id)}')" class="px-4 py-2 rounded-lg bg-primary text-on-primary text-sm font-bold hover:opacity-90 active:scale-95 transition-all">
-                                Save
-                            </button>
-                        </div>
-                    </div>
-                    ` : ''}
-                    <button onclick="openTestModal('${escapeHtml(model.id)}')" class="w-full py-2.5 rounded-lg bg-primary text-on-primary font-bold hover:opacity-90 active:scale-95 transition-all">
-                        Test
-                    </button>
-                `;
-
-                container.appendChild(card);
-            });
-
-            // Load saved API keys
-            loadAPIKeys(models);
-        }
-
-        // Escape HTML to prevent XSS
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        // Load saved API keys
-        async function loadAPIKeys(models) {
-            for (const model of models) {
-                if (!model.verified_anonymous) {
-                    try {
-                        const res = await fetch(`/api/models/${encodeURIComponent(model.id)}/key`);
-                        const data = await res.json();
-                        if (data.exists) {
-                            const input = document.getElementById(`key-${model.id}`);
-                            if (input) {
-                                input.value = '••••••••';
-                                input.dataset.saved = 'true';
-                            }
-                        }
-                    } catch (err) {
-                        console.error(`Failed to check key for ${model.id}:`, err);
-                    }
-                }
-            }
-        }
-
-        // Save API key
-        async function saveAPIKey(modelId) {
-            const input = document.getElementById(`key-${modelId}`);
-            const key = input.value;
-
-            if (!key || key === '••••••••') {
-                alert('Please enter a valid API key');
-                return;
-            }
-
-            try {
-                const res = await fetch(`/api/models/${encodeURIComponent(modelId)}/key`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key })
-                });
-
-                if (res.ok) {
-                    input.value = '••••••••';
-                    input.dataset.saved = 'true';
-                    alert('API key saved successfully');
-                } else {
-                    alert('Failed to save API key');
-                }
-            } catch (err) {
-                console.error('Failed to save API key:', err);
-                alert('Failed to save API key');
-            }
-        }
-
-        // Update statistics
-        async function updateStats() {
-            try {
-                const res = await fetch('/api/stats');
-                const stats = await res.json();
-
-                // Update stat cards
-                document.getElementById('stat-total-requests').textContent = stats.total_requests.toLocaleString();
-                document.getElementById('stat-requests-per-min').textContent = stats.requests_per_minute;
-                document.getElementById('stat-avg-latency').textContent = stats.avg_latency_ms + 'ms';
-                document.getElementById('stat-errors').textContent = stats.error_count;
-
-                // Update 16-model chart
-                render16ModelChart(stats.model_stats);
-
-                // Adaptive polling
-                const tokensPerMin = stats.tokens_per_minute;
-                let newInterval;
-                if (tokensPerMin > 100) {
-                    newInterval = 5000;
-                } else if (tokensPerMin > 10) {
-                    newInterval = 10000;
-                } else {
-                    newInterval = 30000;
-                }
-
-                if (newInterval !== pollInterval) {
-                    pollInterval = newInterval;
-                    clearInterval(statsTimer);
-                    statsTimer = setInterval(updateStats, pollInterval);
-
-                    // Update indicator
-                    const seconds = pollInterval / 1000;
-                    document.getElementById('polling-text').textContent = `Live (${seconds}s)`;
-                }
-            } catch (err) {
-                console.error('Failed to update stats:', err);
-            }
-        }
-
-        // Render 16-model vertical chart
-        function render16ModelChart(modelStats) {
-            const container = document.getElementById('model-chart');
-            container.innerHTML = '';
-
-            if (!modelStats || modelStats.length === 0) {
-                container.innerHTML = '<div class="text-center text-on-surface-variant">No data yet</div>';
-                return;
-            }
-
-            // Ensure we have exactly 16 bars (pad with zeros if needed)
-            const allModels = [
-                'minimax-m2.5-free', 'big-pickle', 'nemotron-3-super-free',
-                'glm-4-flash', 'deepseek-chat', 'qwen-2.5-72b-instruct',
-                'llama-3.3-70b-instruct', 'gemma-2-27b-it', 'mistral-large-2411',
-                'phi-4', 'qwen-qwq-32b-preview', 'deepseek-r1-distill-llama-70b',
-                'marco-o1', 'skywork-o1-open-llama-3.1-8b', 'llama-3.1-nemotron-70b-instruct',
-                'qwen-2.5-coder-32b-instruct'
-            ];
-
-            const modelMap = {};
-            modelStats.forEach(stat => {
-                modelMap[stat.model] = stat.count;
-            });
-
-            const counts = allModels.map(model => modelMap[model] || 0);
-            const maxCount = Math.max(...counts, 1);
-
-            allModels.forEach((model, index) => {
-                const count = counts[index];
-                const height = (count / maxCount) * 100;
-                const isFree = ['minimax-m2.5-free', 'big-pickle', 'nemotron-3-super-free'].includes(model);
-                const color = isFree ? 'bg-secondary' : 'bg-primary/40';
-
-                const bar = document.createElement('div');
-                bar.className = `flex-1 ${color} rounded-t-sm transition-all duration-500`;
-                bar.style.height = `${height}%`;
-                bar.title = `${model}: ${count} requests`;
-
-                container.appendChild(bar);
-            });
-        }
-
-        // Open test modal
-        function openTestModal(modelId) {
-            document.getElementById('modal-model-name').textContent = modelId;
-            document.getElementById('test-modal').classList.remove('hidden');
-            document.getElementById('test-prompt').focus();
-            document.getElementById('test-modal').dataset.modelId = modelId;
-
-            // Reset modal state
-            document.getElementById('test-response').classList.add('hidden');
-            document.getElementById('test-error').classList.add('hidden');
-        }
-
-        // Close test modal
-        document.getElementById('modal-close').addEventListener('click', () => {
-            document.getElementById('test-modal').classList.add('hidden');
+      // Render 16-model vertical chart
+      function renderChart() {
+        const canvas = document.getElementById('chart');
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        
+        ctx.clearRect(0, 0, width, height);
+        
+        if (chartData.length === 0) return;
+        
+        const max = Math.max(...chartData, 1);
+        const barWidth = width / MAX_CHART_POINTS;
+        
+        chartData.forEach((value, i) => {
+          const barHeight = (value / max) * height;
+          const x = i * barWidth;
+          const y = height - barHeight;
+          
+          // Gradient from purple to cyan
+          const gradient = ctx.createLinearGradient(0, y, 0, height);
+          gradient.addColorStop(0, '#c0c1ff');
+          gradient.addColorStop(1, '#4cd7f6');
+          
+          ctx.fillStyle = gradient;
+          ctx.fillRect(x, y, barWidth - 2, barHeight);
         });
+      }
 
-        // Close modal on backdrop click
-        document.getElementById('test-modal').addEventListener('click', (e) => {
-            if (e.target.id === 'test-modal') {
-                document.getElementById('test-modal').classList.add('hidden');
-            }
-        });
-
-        // Close modal on Escape key
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                document.getElementById('test-modal').classList.add('hidden');
-            }
-        });
-
-        // Submit test request
-        document.getElementById('test-submit').addEventListener('click', async () => {
-            const modelId = document.getElementById('test-modal').dataset.modelId;
-            const prompt = document.getElementById('test-prompt').value;
-
-            if (!prompt.trim()) {
-                alert('Please enter a prompt');
-                return;
-            }
-
-            // Show loading
-            document.getElementById('test-loading').classList.remove('hidden');
-            document.getElementById('test-response').classList.add('hidden');
-            document.getElementById('test-error').classList.add('hidden');
-            document.getElementById('test-submit').disabled = true;
-
-            try {
-                const res = await fetch('/v1/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrfToken
-                    },
-                    body: JSON.stringify({
-                        model: modelId,
-                        messages: [{ role: 'user', content: prompt }]
-                    })
-                });
-
-                const data = await res.json();
-
-                if (res.ok && data.choices && data.choices[0]) {
-                    // XSS-safe rendering using textContent
-                    const responseContent = data.choices[0].message.content;
-                    document.getElementById('test-response-content').textContent = responseContent;
-                    document.getElementById('test-response').classList.remove('hidden');
-                } else {
-                    // XSS-safe error rendering
-                    const errorMsg = data.error?.message || 'Unknown error';
-                    document.getElementById('test-error').textContent = errorMsg;
-                    document.getElementById('test-error').classList.remove('hidden');
-                }
-            } catch (err) {
-                // XSS-safe error rendering
-                document.getElementById('test-error').textContent = err.message;
-                document.getElementById('test-error').classList.remove('hidden');
-            } finally {
-                document.getElementById('test-loading').classList.add('hidden');
-                document.getElementById('test-submit').disabled = false;
-            }
-        });
-
-        // Initialize
-        async function init() {
-            await fetchCSRFToken();
-            loadModels();
-            updateStats();
-            statsTimer = setInterval(updateStats, pollInterval);
+      // Adaptive polling based on tokens/min
+      function updatePollInterval(tokensPerMin) {
+        let newInterval;
+        if (tokensPerMin > 1000) {
+          newInterval = 5000; // High activity: 5s
+        } else if (tokensPerMin > 100) {
+          newInterval = 10000; // Medium activity: 10s
+        } else {
+          newInterval = 30000; // Low activity: 30s
         }
+        
+        if (newInterval !== pollInterval) {
+          pollInterval = newInterval;
+          clearInterval(pollTimer);
+          pollTimer = setInterval(updateStats, pollInterval);
+        }
+      }
 
-        init();
+      // Test modal
+      function openTestModal() {
+        document.getElementById('test-modal').classList.remove('hidden');
+      }
+
+      function closeTestModal() {
+        document.getElementById('test-modal').classList.add('hidden');
+        document.getElementById('test-result').textContent = '';
+      }
+
+      async function runTest() {
+        const model = document.getElementById('test-model').value;
+        const prompt = document.getElementById('test-prompt').value;
+        const resultEl = document.getElementById('test-result');
+        
+        if (!prompt.trim()) {
+          resultEl.textContent = 'Please enter a prompt';
+          return;
+        }
+        
+        resultEl.textContent = 'Testing...';
+        
+        try {
+          const res = await fetch('/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: [{ role: 'user', content: prompt }]
+            })
+          });
+          
+          const data = await res.json();
+          
+          if (res.ok && data.choices && data.choices[0]) {
+            resultEl.textContent = data.choices[0].message.content;
+          } else {
+            resultEl.textContent = 'Error: ' + (data.error?.message || 'Unknown error');
+          }
+        } catch (err) {
+          resultEl.textContent = 'Request failed: ' + err.message;
+        }
+      }
+
+      // API Key modal
+      function openAPIKeyModal(modelId) {
+        document.getElementById('api-key-modal').classList.remove('hidden');
+        document.getElementById('api-key-model').textContent = modelId;
+        document.getElementById('api-key-model').dataset.model = modelId;
+        document.getElementById('api-key-input').value = '';
+        
+        // Check if key exists
+        fetch(`/api/models/${encodeURIComponent(modelId)}/key`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.exists) {
+              document.getElementById('api-key-input').placeholder = '••••••••••••••••';
+            }
+          });
+      }
+
+      function closeAPIKeyModal() {
+        document.getElementById('api-key-modal').classList.add('hidden');
+      }
+
+      async function saveAPIKey() {
+        const modelId = document.getElementById('api-key-model').dataset.model;
+        const key = document.getElementById('api-key-input').value;
+        
+        if (!key.trim()) {
+          alert('Please enter an API key');
+          return;
+        }
+        
+        try {
+          const res = await fetch(`/api/models/${encodeURIComponent(modelId)}/key`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({ key: key })
+          });
+          
+          if (res.ok) {
+            closeAPIKeyModal();
+            alert('API key saved successfully');
+          } else {
+            alert('Failed to save API key');
+          }
+        } catch (err) {
+          alert('Request failed: ' + err.message);
+        }
+      }
+
+      async function deleteAPIKey() {
+        const modelId = document.getElementById('api-key-model').dataset.model;
+        
+        if (!confirm('Delete API key for ' + modelId + '?')) return;
+        
+        try {
+          const res = await fetch(`/api/models/${encodeURIComponent(modelId)}/key`, {
+            method: 'DELETE',
+            headers: {
+              'X-CSRF-Token': csrfToken
+            }
+          });
+          
+          if (res.ok) {
+            closeAPIKeyModal();
+            alert('API key deleted successfully');
+          } else {
+            alert('Failed to delete API key');
+          }
+        } catch (err) {
+          alert('Request failed: ' + err.message);
+        }
+      }
+
+      // XSS protection
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      // Initialize
+      async function init() {
+        await fetchCSRFToken();
+        await loadModels();
+        await updateStats();
+        pollTimer = setInterval(updateStats, pollInterval);
+      }
+
+      init();
     </script>
-</body>
+  </body>
 </html>
