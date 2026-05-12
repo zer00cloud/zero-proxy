@@ -457,7 +457,7 @@ const server = http.createServer(async (req, res) => {
       log(`🔐 Generated CSRF token: ${token.substring(0, 8)}...`);
       return json(res, 200, { token });
     }
-    if (req.method === "GET" && (url.pathname === "/v1/models" || url.pathname === "/models")) {
+    if (req.method === "GET" && (url.pathname === "/v1/models" || url.pathname === "/models" || url.pathname === "/v1")) {
       logResponse(200, { endpoint: "models list" });
       return handleModels(res);
     }
