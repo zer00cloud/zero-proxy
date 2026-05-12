@@ -324,17 +324,19 @@
                         </div>
                     </div>
                     <!-- Tunnel -->
-                    <div class="flex items-center gap-md">
-                        <span class="w-20 flex-shrink-0 px-2.5 py-1 rounded bg-tertiary-container/10 text-tertiary-container text-[10px] font-bold text-center tracking-wider">TUNNEL</span>
-                        <div class="flex-1 flex items-center bg-surface-container-low border border-outline-variant/20 rounded-lg px-sm py-2 gap-sm">
-                            <code id="endpoint-tunnel" class="flex-1 text-body-sm font-mono text-on-surface truncate">Not active</code>
+                    <div class="space-y-xs">
+                        <div class="flex items-center gap-md">
+                            <span class="w-20 flex-shrink-0 px-2.5 py-1 rounded bg-tertiary-container/10 text-tertiary-container text-[10px] font-bold text-center tracking-wider">TUNNEL</span>
+                            <button id="tunnel-toggle-btn" onclick="toggleTunnel()" class="flex-shrink-0 p-2 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors">
+                                <span class="material-symbols-outlined text-[20px]">power_settings_new</span>
+                            </button>
+                        </div>
+                        <div class="flex items-center bg-surface-container-low border border-outline-variant/20 rounded-lg px-sm py-2 gap-sm min-h-[40px]">
+                            <code id="endpoint-tunnel" class="flex-1 text-body-sm font-mono text-on-surface break-all">Not active</code>
                             <button id="tunnel-copy-btn" onclick="copyEndpoint('tunnel')" class="hidden flex-shrink-0 text-on-surface-variant hover:text-primary transition-colors">
                                 <span class="material-symbols-outlined text-[20px]">content_copy</span>
                             </button>
                         </div>
-                        <button id="tunnel-toggle-btn" onclick="toggleTunnel()" class="flex-shrink-0 p-2 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors">
-                            <span class="material-symbols-outlined text-[20px]">power_settings_new</span>
-                        </button>
                     </div>
                     <!-- Model -->
                     <div class="flex items-center gap-md">
