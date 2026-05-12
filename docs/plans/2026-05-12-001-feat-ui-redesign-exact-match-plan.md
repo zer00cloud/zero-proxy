@@ -1,5 +1,6 @@
 ---
 title: "feat: UI Redesign - Exact Match to Reference Design"
+
 type: feat
 status: active
 created: 2026-05-12

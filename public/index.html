@@ -141,13 +141,14 @@
                 <section class="bg-surface-container-low border border-outline-variant/10 rounded-xl overflow-hidden">
                     <div class="px-md py-sm border-b border-outline-variant/10 flex justify-between items-center">
                         <div>
-                            <h2 class="font-headline-md text-headline-md text-on-surface">Token Usage by Model</h2>
-                            <p class="font-label-sm text-label-sm text-on-surface-variant">Total tokens consumed per model across all requests</p>
+                            <h2 class="font-headline-md text-headline-md text-on-surface">Model Usage</h2>
+                            <p id="chart-subtitle" class="font-label-sm text-label-sm text-on-surface-variant">Total tokens consumed per model across all requests</p>
                         </div>
-                        <div class="flex gap-xs">
+                        <div class="flex gap-xs items-center">
+                            <button id="chart-toggle-btn" onclick="toggleChartMode()" class="px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors cursor-pointer">Show Requests</button>
                             <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-container/20 text-secondary text-xs font-semibold">
                                 <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
-                                Live Sync
+                                2s Live
                             </span>
                         </div>
                     </div>
@@ -354,8 +355,10 @@
     <script>
       // State
       let csrfToken = null;
-      let pollInterval = 10000;
+      let pollInterval = 2000;
       let pollTimer = null;
+      let chartMode = 'tokens'; // 'tokens' or 'requests'
+      let lastModelStats = [];
       let disabledModels = new Set();
       let tunnelActive = false;
       let tunnelUrl = '';
@@ -488,9 +491,8 @@
           document.getElementById('total-errors').textContent = stats.error_count.toLocaleString();
 
           // Update chart with per-model stats
-          renderChart(stats.model_stats || []);
-
-          updatePollInterval(stats.tokens_per_minute || 0);
+          lastModelStats = stats.model_stats || [];
+          renderChart(lastModelStats);
         } catch (err) {
           console.error('Failed to update stats:', err);
         }
@@ -531,13 +533,16 @@
           "trinity-lg"
         ];
 
-        // Create data array with tokens for each model
-        const modelTokens = allModels.map(modelId => {
+        // Create data array based on current chart mode
+        const modelValues = allModels.map(modelId => {
           const stat = modelStats.find(s => s.model === modelId);
+          if (chartMode === 'requests') {
+            return stat ? stat.count : 0;
+          }
           return stat ? stat.tokens : 0;
         });
 
-        const max = Math.max(...modelTokens, 1);
+        const max = Math.max(...modelValues, 1);
 
         // Calculate dimensions
         const padding = 40;
@@ -559,18 +564,25 @@
         }
 
         // Draw bars
-        modelTokens.forEach((tokens, i) => {
-          const barHeight = (tokens / max) * chartHeight;
+        modelValues.forEach((value, i) => {
+          const modelId = allModels[i];
+          const isModelDisabled = disabledModels.has(modelId);
+          const barHeight = (value / max) * chartHeight;
           const x = padding + i * barWidth + barSpacing / 2;
           const y = padding + chartHeight - barHeight;
 
-          // Color gradient based on index
+          // Color gradient based on index - dim if disabled
           const colors = [
             ['#c0c1ff', '#8083ff'], // primary
             ['#4cd7f6', '#03b5d3'], // secondary
             ['#ffb783', '#d97721']  // tertiary
           ];
-          const colorPair = colors[i % 3];
+          const disabledColors = [
+            ['rgba(192,193,255,0.25)', 'rgba(128,131,255,0.25)'],
+            ['rgba(76,215,246,0.25)', 'rgba(3,181,211,0.25)'],
+            ['rgba(255,183,131,0.25)', 'rgba(217,119,33,0.25)']
+          ];
+          const colorPair = isModelDisabled ? disabledColors[i % 3] : colors[i % 3];
 
           const gradient = ctx.createLinearGradient(0, y, 0, padding + chartHeight);
           gradient.addColorStop(0, colorPair[0]);
@@ -580,22 +592,41 @@
           ctx.fillStyle = gradient;
           ctx.fillRect(x, y, actualBarWidth, barHeight);
 
-          // Draw token count on top of bar if tokens > 0
-          if (tokens > 0) {
-            ctx.fillStyle = '#e3e1ec';
-            ctx.font = 'bold 11px Inter';
-            ctx.textAlign = 'center';
-            // Format large numbers (e.g., 1000 -> 1K)
-            const displayTokens = tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'K' : tokens.toString();
-            ctx.fillText(displayTokens, x + actualBarWidth / 2, y - 5);
+          // Draw striped overlay for disabled models
+          if (isModelDisabled && value > 0) {
+            ctx.save();
+            ctx.globalAlpha = 0.3;
+            ctx.strokeStyle = '#ff4444';
+            ctx.lineWidth = 1;
+            for (let sy = y; sy < y + barHeight; sy += 6) {
+              ctx.beginPath();
+              ctx.moveTo(x, sy);
+              ctx.lineTo(x + actualBarWidth, sy + 3);
+              ctx.stroke();
+            }
+            ctx.restore();
           }
 
-          // Draw model label (rotated)
+          // Draw value on top of bar if > 0
+          if (value > 0) {
+            ctx.fillStyle = isModelDisabled ? '#887f94' : '#e3e1ec';
+            ctx.font = 'bold 11px Inter';
+            ctx.textAlign = 'center';
+            let displayValue;
+            if (chartMode === 'requests') {
+              displayValue = value.toString();
+            } else {
+              displayValue = value >= 1000 ? (value / 1000).toFixed(1) + 'K' : value.toString();
+            }
+            ctx.fillText(displayValue, x + actualBarWidth / 2, y - 5);
+          }
+
+          // Draw model label (rotated) - dim if disabled
           ctx.save();
           ctx.translate(x + actualBarWidth / 2, padding + chartHeight + 10);
           ctx.rotate(-Math.PI / 4);
-          ctx.fillStyle = '#c7c4d7';
-          ctx.font = '10px Inter';
+          ctx.fillStyle = isModelDisabled ? '#665e70' : '#c7c4d7';
+          ctx.font = isModelDisabled ? 'italic 10px Inter' : '10px Inter';
           ctx.textAlign = 'right';
           ctx.fillText(modelLabels[i], 0, 0);
           ctx.restore();
@@ -610,24 +641,24 @@
           const y = padding + (chartHeight / 4) * i;
           ctx.fillText(value.toString(), padding - 10, y + 4);
         }
+
+        // Update chart subtitle text
+        const subtitleEl = document.getElementById('chart-subtitle');
+        if (subtitleEl) {
+          subtitleEl.textContent = chartMode === 'tokens'
+            ? 'Total tokens consumed per model across all requests'
+            : 'Total request count per model across all requests';
+        }
       }
 
-      // Adaptive polling
-      function updatePollInterval(tokensPerMin) {
-        let newInterval;
-        if (tokensPerMin > 1000) {
-          newInterval = 5000;
-        } else if (tokensPerMin > 100) {
-          newInterval = 10000;
-        } else {
-          newInterval = 30000;
+      // Toggle chart between tokens and requests
+      function toggleChartMode() {
+        chartMode = chartMode === 'tokens' ? 'requests' : 'tokens';
+        const btn = document.getElementById('chart-toggle-btn');
+        if (btn) {
+          btn.textContent = chartMode === 'tokens' ? 'Show Requests' : 'Show Tokens';
         }
-
-        if (newInterval !== pollInterval) {
-          pollInterval = newInterval;
-          clearInterval(pollTimer);
-          pollTimer = setInterval(updateStats, pollInterval);
-        }
+        renderChart(lastModelStats);
       }
 
       // Test modal functions
@@ -696,6 +727,7 @@
                 card.classList.remove('opacity-50');
               }
               showToast(`${modelId} enabled`);
+              renderChart(lastModelStats); // Update chart to reflect enabled state
             } else {
               // Revert checkbox if failed
               checkbox.checked = false;
@@ -714,6 +746,7 @@
                 card.classList.add('opacity-50');
               }
               showToast(`${modelId} disabled`);
+              renderChart(lastModelStats); // Update chart to reflect disabled state
             } else {
               // Revert checkbox if failed
               checkbox.checked = true;

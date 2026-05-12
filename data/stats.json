@@ -978,7 +978,55 @@
           "tokens": 412
         }
       }
+    },
+    {
+      "timestamp": 1778559540000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        2351
+      ],
+      "tokens": 58,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 58
+        }
+      }
+    },
+    {
+      "timestamp": 1778559600000,
+      "count": 4,
+      "errors": 0,
+      "latencies": [
+        1345,
+        2238,
+        1817,
+        2718
+      ],
+      "tokens": 318,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 4,
+          "tokens": 318
+        }
+      }
+    },
+    {
+      "timestamp": 1778560320000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        7518
+      ],
+      "tokens": 469,
+      "models": {
+        "big-pickle": {
+          "count": 1,
+          "tokens": 469
+        }
+      }
     }
   ],
-  "lastUpdated": 1778551793968
+  "lastUpdated": 1778560320271
 }
