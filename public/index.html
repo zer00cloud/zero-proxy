@@ -923,7 +923,7 @@
       // Toast notification
       function showToast(message, isError = false) {
         const toast = document.createElement('div');
-        toast.className = `fixed bottom-20 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg ${isError ? 'bg-error text-on-error' : 'bg-secondary text-on-secondary'} font-label-md shadow-lg z-50 animate-fade-in`;
+        toast.className = `fixed bottom-20 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg ${isError ? 'bg-error text-on-error' : 'bg-secondary text-on-secondary'} font-label-md shadow-lg z-[200] animate-fade-in`;
         toast.textContent = message;
         document.body.appendChild(toast);
 

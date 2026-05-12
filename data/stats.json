@@ -868,7 +868,22 @@
           "tokens": 763
         }
       }
+    },
+    {
+      "timestamp": 1778546220000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        8525
+      ],
+      "tokens": 59,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 59
+        }
+      }
     }
   ],
-  "lastUpdated": 1778519904948
+  "lastUpdated": 1778546246890
 }
