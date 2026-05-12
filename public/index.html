@@ -141,8 +141,8 @@
                 <section class="bg-surface-container-low border border-outline-variant/10 rounded-xl overflow-hidden">
                     <div class="px-md py-sm border-b border-outline-variant/10 flex justify-between items-center">
                         <div>
-                            <h2 class="font-headline-md text-headline-md text-on-surface">Usage Statistics</h2>
-                            <p class="font-label-sm text-label-sm text-on-surface-variant">Real-time API traffic monitoring across global clusters</p>
+                            <h2 class="font-headline-md text-headline-md text-on-surface">Token Usage by Model</h2>
+                            <p class="font-label-sm text-label-sm text-on-surface-variant">Total tokens consumed per model across all requests</p>
                         </div>
                         <div class="flex gap-xs">
                             <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-container/20 text-secondary text-xs font-semibold">
@@ -151,15 +151,10 @@
                             </span>
                         </div>
                     </div>
-                    <div class="p-md h-64 relative">
-                        <!-- Chart Container -->
-                        <canvas id="chart" width="800" height="200" class="absolute inset-x-md bottom-md top-md"></canvas>
-                        <div class="absolute inset-0 chart-gradient pointer-events-none"></div>
-                        <div class="absolute inset-x-0 top-0 h-full flex flex-col justify-between py-md pointer-events-none opacity-10">
-                            <div class="border-t border-on-surface"></div>
-                            <div class="border-t border-on-surface"></div>
-                            <div class="border-t border-on-surface"></div>
-                            <div class="border-t border-on-surface"></div>
+                    <div class="p-md">
+                        <!-- Bar Chart Container -->
+                        <div class="relative" style="height: 400px;">
+                            <canvas id="chart" class="w-full h-full"></canvas>
                         </div>
                     </div>
                 </section>
@@ -474,7 +469,7 @@
           document.getElementById('total-requests').textContent = stats.total_requests.toLocaleString();
           document.getElementById('avg-latency').textContent = Math.round(stats.avg_latency_ms) + 'ms';
           document.getElementById('total-tokens').textContent = stats.total_tokens.toLocaleString();
-          document.getElementById('total-errors').textContent = stats.total_errors.toLocaleString();
+          document.getElementById('total-errors').textContent = stats.error_count.toLocaleString();
 
           // Update chart with per-model stats
           renderChart(stats.model_stats || []);
@@ -489,12 +484,16 @@
       function renderChart(modelStats) {
         const canvas = document.getElementById('chart');
         const ctx = canvas.getContext('2d');
+
+        // Set canvas size to match container
+        const container = canvas.parentElement;
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+
         const width = canvas.width;
         const height = canvas.height;
 
         ctx.clearRect(0, 0, width, height);
-
-        if (modelStats.length === 0) return;
 
         // Get all 16 models from FREE_MODELS
         const allModels = [
@@ -506,19 +505,48 @@
           "trinity-large-preview-free"
         ];
 
-        // Create data array with counts for each model
-        const modelCounts = allModels.map(modelId => {
+        // Short labels for display
+        const modelLabels = [
+          "minimax-m2.5", "big-pickle", "nemotron-3",
+          "glm-4.7", "kimi-k2.5", "glm-5",
+          "minimax-m2.1", "qwen3.6+", "ling-2.6",
+          "grok-code", "mimo-flash", "hy3-prev",
+          "mimo-pro", "mimo-omni", "ring-2.6",
+          "trinity-lg"
+        ];
+
+        // Create data array with tokens for each model
+        const modelTokens = allModels.map(modelId => {
           const stat = modelStats.find(s => s.model === modelId);
-          return stat ? stat.count : 0;
+          return stat ? stat.tokens : 0;
         });
 
-        const max = Math.max(...modelCounts, 1);
-        const barWidth = width / 16;
+        const max = Math.max(...modelTokens, 1);
 
-        modelCounts.forEach((count, i) => {
-          const barHeight = (count / max) * height;
-          const x = i * barWidth;
-          const y = height - barHeight;
+        // Calculate dimensions
+        const padding = 40;
+        const labelHeight = 60;
+        const chartHeight = height - labelHeight - padding;
+        const barWidth = (width - padding * 2) / 16;
+        const barSpacing = 4;
+        const actualBarWidth = barWidth - barSpacing;
+
+        // Draw grid lines
+        ctx.strokeStyle = 'rgba(192, 193, 255, 0.1)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+          const y = padding + (chartHeight / 4) * i;
+          ctx.beginPath();
+          ctx.moveTo(padding, y);
+          ctx.lineTo(width - padding, y);
+          ctx.stroke();
+        }
+
+        // Draw bars
+        modelTokens.forEach((tokens, i) => {
+          const barHeight = (tokens / max) * chartHeight;
+          const x = padding + i * barWidth + barSpacing / 2;
+          const y = padding + chartHeight - barHeight;
 
           // Color gradient based on index
           const colors = [
@@ -528,13 +556,44 @@
           ];
           const colorPair = colors[i % 3];
 
-          const gradient = ctx.createLinearGradient(0, y, 0, height);
+          const gradient = ctx.createLinearGradient(0, y, 0, padding + chartHeight);
           gradient.addColorStop(0, colorPair[0]);
           gradient.addColorStop(1, colorPair[1]);
 
+          // Draw bar
           ctx.fillStyle = gradient;
-          ctx.fillRect(x + 1, y, barWidth - 2, barHeight);
+          ctx.fillRect(x, y, actualBarWidth, barHeight);
+
+          // Draw token count on top of bar if tokens > 0
+          if (tokens > 0) {
+            ctx.fillStyle = '#e3e1ec';
+            ctx.font = 'bold 11px Inter';
+            ctx.textAlign = 'center';
+            // Format large numbers (e.g., 1000 -> 1K)
+            const displayTokens = tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'K' : tokens.toString();
+            ctx.fillText(displayTokens, x + actualBarWidth / 2, y - 5);
+          }
+
+          // Draw model label (rotated)
+          ctx.save();
+          ctx.translate(x + actualBarWidth / 2, padding + chartHeight + 10);
+          ctx.rotate(-Math.PI / 4);
+          ctx.fillStyle = '#c7c4d7';
+          ctx.font = '10px Inter';
+          ctx.textAlign = 'right';
+          ctx.fillText(modelLabels[i], 0, 0);
+          ctx.restore();
         });
+
+        // Draw Y-axis labels
+        ctx.fillStyle = '#c7c4d7';
+        ctx.font = '11px Inter';
+        ctx.textAlign = 'right';
+        for (let i = 0; i <= 4; i++) {
+          const value = Math.round((max / 4) * (4 - i));
+          const y = padding + (chartHeight / 4) * i;
+          ctx.fillText(value.toString(), padding - 10, y + 4);
+        }
       }
 
       // Adaptive polling
@@ -1117,6 +1176,15 @@
         await loadModels();
         await updateStats();
         pollTimer = setInterval(updateStats, pollInterval);
+
+        // Handle window resize
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            updateStats();
+          }, 250);
+        });
       }
 
       init();

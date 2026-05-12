@@ -913,7 +913,72 @@
           "tokens": 83
         }
       }
+    },
+    {
+      "timestamp": 1778550660000,
+      "count": 2,
+      "errors": 1,
+      "latencies": [
+        6107,
+        169
+      ],
+      "tokens": 68,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 68
+        },
+        "glm-4.7-free": {
+          "count": 1,
+          "tokens": 0
+        }
+      }
+    },
+    {
+      "timestamp": 1778550840000,
+      "count": 1,
+      "errors": 1,
+      "latencies": [
+        613
+      ],
+      "tokens": 0,
+      "models": {
+        "mimo-v2-omni-free": {
+          "count": 1,
+          "tokens": 0
+        }
+      }
+    },
+    {
+      "timestamp": 1778551260000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        4715
+      ],
+      "tokens": 65,
+      "models": {
+        "minimax-m2.5-free": {
+          "count": 1,
+          "tokens": 65
+        }
+      }
+    },
+    {
+      "timestamp": 1778551740000,
+      "count": 1,
+      "errors": 0,
+      "latencies": [
+        6945
+      ],
+      "tokens": 412,
+      "models": {
+        "big-pickle": {
+          "count": 1,
+          "tokens": 412
+        }
+      }
     }
   ],
-  "lastUpdated": 1778548004999
+  "lastUpdated": 1778551793968
 }

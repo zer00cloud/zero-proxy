@@ -178,6 +178,7 @@ function createStatsTracker() {
     return {
       uptime_seconds: Math.floor((now - (stats.buckets[0]?.timestamp || now)) / 1000),
       total_requests: totalRequests,
+      total_tokens: totalTokens,
       requests_per_minute: recentRequests,
       tokens_per_minute: recentTokens,
       avg_latency_ms: avgLatencyMs,
