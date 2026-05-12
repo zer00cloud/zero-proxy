@@ -557,9 +557,14 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
-        // Start new cloudflared tunnel
-        const tunnelProcess = spawn("cloudflared", ["tunnel", "--url", `http://127.0.0.1:${PORT}`]);
+        // Create config file for tunnel
+        const configPath = `/tmp/cloudflared-${Date.now()}.yml`;
+        fs.writeFileSync(configPath, `url: http://127.0.0.1:${PORT}\nno-autoupdate: true\n`);
+
+        // Start new cloudflared tunnel with config
+        const tunnelProcess = spawn("cloudflared", ["tunnel", "--config", configPath]);
         global.tunnelProcess = tunnelProcess;
+        global.tunnelConfigPath = configPath;
 
         // Capture tunnel URL from output
         let tunnelUrl = null;
@@ -625,9 +630,19 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
+        // Clean up config file
+        if (global.tunnelConfigPath) {
+          try {
+            fs.unlinkSync(global.tunnelConfigPath);
+            global.tunnelConfigPath = null;
+          } catch (err) {
+            log(`⚠️  Failed to delete config: ${err.message}`);
+          }
+        }
+
         // Kill ALL cloudflared tunnels
         try {
-          await execAsync(`pkill -f "cloudflared tunnel --url"`);
+          await execAsync(`pkill -f "cloudflared tunnel"`);
           log(`✅ Killed all cloudflared tunnels`);
         } catch (err) {
           // No tunnels running, that's fine
