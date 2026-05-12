@@ -536,9 +536,9 @@ const server = http.createServer(async (req, res) => {
         const { promisify } = await import("node:util");
         const execAsync = promisify(exec);
 
-        // Kill ALL existing cloudflared tunnels for this port first
+        // Kill ALL existing cloudflared tunnels first
         try {
-          await execAsync(`pkill -f "cloudflared tunnel --url"`);
+          await execAsync(`pkill -f "cloudflared tunnel"`);
           log(`🧹 Killed all existing tunnels`);
           await new Promise(resolve => setTimeout(resolve, 1000));
         } catch (err) {
