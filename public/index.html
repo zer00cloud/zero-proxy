@@ -388,6 +388,20 @@
           const res = await fetch('/v1/models');
           const data = await res.json();
 
+          // Check which models have API keys
+          const apiKeyStatus = {};
+          for (const model of data.data) {
+            if (!model.verified_anonymous) {
+              try {
+                const keyRes = await fetch(`/api/models/${encodeURIComponent(model.id)}/key`);
+                const keyData = await keyRes.json();
+                apiKeyStatus[model.id] = keyData.exists;
+              } catch {
+                apiKeyStatus[model.id] = false;
+              }
+            }
+          }
+
           const grid = document.getElementById('models-grid');
           grid.innerHTML = '';
 
@@ -397,6 +411,7 @@
             const model = data.data[i];
             const iconColor = iconColors[i % 3];
             const isFree = model.verified_anonymous;
+            const hasApiKey = apiKeyStatus[model.id] || false;
             const isDisabled = disabledModels.has(model.id);
 
             const card = document.createElement('div');
@@ -407,7 +422,8 @@
               <div class="flex justify-between items-start">
                 <div class="flex items-center gap-2">
                   <span class="material-symbols-outlined text-${iconColor}">smart_toy</span>
-                  ${isFree ? '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-error/10 text-error border border-error/20">FREE</span>' : ''}
+                  ${isFree ? '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-secondary/10 text-secondary border border-secondary/20">FREE</span>' : ''}
+                  ${!isFree && hasApiKey ? '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-primary/10 text-primary border border-primary/20">API KEY SET</span>' : ''}
                 </div>
                 <div class="flex gap-xs">
                   <button class="p-1.5 rounded-md hover:bg-surface-variant text-on-surface-variant hover:text-primary transition-colors" onclick="copyModelName('${escapeHtml(model.id)}', event)">
@@ -879,12 +895,14 @@
 
           if (res.ok) {
             closeAPIKeyModal();
-            alert('API key saved successfully');
+            showToast('API key saved successfully');
+            // Reload models to show "API KEY SET" label
+            await loadModels();
           } else {
-            alert('Failed to save API key');
+            showToast('Failed to save API key', true);
           }
         } catch (err) {
-          alert('Request failed: ' + err.message);
+          showToast('Request failed: ' + err.message, true);
         }
       }
 
