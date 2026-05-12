@@ -1,5 +1,6 @@
 import http from "node:http";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import { FREE_MODELS, AUTO_FALLBACK_CHAIN, MODEL_IDS } from "./models.js";
 import { statsTracker } from "./stats.js";
 import { apiKeyManager } from "./api-keys.js";
@@ -13,19 +14,39 @@ const PROXY_KEY = process.env.PROXY_KEY || ""; // if set, clients must send matc
 const TUNNEL_URL = process.env.TUNNEL_URL || ""; // Cloudflare tunnel URL if active
 
 // CSRF token management
-const validTokens = new Set();
+const validTokens = new Map(); // Map<token, expiryTime>
 
 function generateCSRFToken() {
   const token = crypto.randomUUID();
-  validTokens.add(token);
-  // Token expires after 1 hour
-  setTimeout(() => validTokens.delete(token), 3600000);
+  const expiryTime = Date.now() + 3600000; // 1 hour
+  validTokens.set(token, expiryTime);
   return token;
 }
 
+// Cleanup expired tokens every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, expiryTime] of validTokens.entries()) {
+    if (expiryTime < now) {
+      validTokens.delete(token);
+    }
+  }
+}, 600000);
+
 function validateCSRF(req) {
   const token = req.headers['x-csrf-token'];
-  return token && validTokens.has(token);
+  if (!token) return false;
+
+  const expiryTime = validTokens.get(token);
+  if (!expiryTime) return false;
+
+  // Check if token is expired
+  if (expiryTime < Date.now()) {
+    validTokens.delete(token);
+    return false;
+  }
+
+  return true;
 }
 
 // Check if request is from browser (needs CSRF) or API client (no CSRF needed)
@@ -517,7 +538,7 @@ const server = http.createServer(async (req, res) => {
 
         // Kill ALL existing cloudflared tunnels for this port first
         try {
-          await execAsync(`pkill -f "cloudflared tunnel --url http://127.0.0.1:${PORT}"`);
+          await execAsync(`pkill -f "cloudflared tunnel --url"`);
           log(`🧹 Killed all existing tunnels`);
           await new Promise(resolve => setTimeout(resolve, 1000));
         } catch (err) {
@@ -536,7 +557,7 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
-        // Start new cloudflared tunnel (use 127.0.0.1 instead of localhost)
+        // Start new cloudflared tunnel
         const tunnelProcess = spawn("cloudflared", ["tunnel", "--url", `http://127.0.0.1:${PORT}`]);
         global.tunnelProcess = tunnelProcess;
 
@@ -546,7 +567,7 @@ const server = http.createServer(async (req, res) => {
         const urlPromise = new Promise((resolve, reject) => {
           const timeout = setTimeout(() => reject(new Error("Tunnel start timeout")), 30000);
 
-          // Cloudflared outputs to stderr, not stdout
+          // Cloudflared outputs to stderr
           tunnelProcess.stderr.on("data", (data) => {
             const output = data.toString();
             log(`🚇 Tunnel output: ${output.trim()}`);
@@ -604,10 +625,10 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
-        // Kill ALL cloudflared tunnels for this port
+        // Kill ALL cloudflared tunnels
         try {
-          await execAsync(`pkill -f "cloudflared tunnel --url http://127.0.0.1:${PORT}"`);
-          log(`✅ Killed all cloudflared tunnels for port ${PORT}`);
+          await execAsync(`pkill -f "cloudflared tunnel --url"`);
+          log(`✅ Killed all cloudflared tunnels`);
         } catch (err) {
           // No tunnels running, that's fine
           log(`ℹ️  No tunnels to kill`);
