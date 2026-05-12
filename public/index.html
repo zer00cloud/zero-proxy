@@ -361,8 +361,6 @@
       let csrfToken = null;
       let pollInterval = 10000;
       let pollTimer = null;
-      let chartData = [];
-      const MAX_CHART_POINTS = 16;
       let disabledModels = new Set();
       let tunnelActive = false;
       let tunnelUrl = '';
@@ -478,21 +476,17 @@
           document.getElementById('total-tokens').textContent = stats.total_tokens.toLocaleString();
           document.getElementById('total-errors').textContent = stats.total_errors.toLocaleString();
 
-          const tokensPerMin = stats.tokens_per_minute || 0;
-          chartData.push(tokensPerMin);
-          if (chartData.length > MAX_CHART_POINTS) {
-            chartData.shift();
-          }
-          renderChart();
+          // Update chart with per-model stats
+          renderChart(stats.model_stats || []);
 
-          updatePollInterval(tokensPerMin);
+          updatePollInterval(stats.tokens_per_minute || 0);
         } catch (err) {
           console.error('Failed to update stats:', err);
         }
       }
 
-      // Render 16-bar vertical chart
-      function renderChart() {
+      // Render bar chart for 16 models
+      function renderChart(modelStats) {
         const canvas = document.getElementById('chart');
         const ctx = canvas.getContext('2d');
         const width = canvas.width;
@@ -500,22 +494,46 @@
 
         ctx.clearRect(0, 0, width, height);
 
-        if (chartData.length === 0) return;
+        if (modelStats.length === 0) return;
 
-        const max = Math.max(...chartData, 1);
-        const barWidth = width / MAX_CHART_POINTS;
+        // Get all 16 models from FREE_MODELS
+        const allModels = [
+          "minimax-m2.5-free", "big-pickle", "nemotron-3-super-free",
+          "glm-4.7-free", "kimi-k2.5-free", "glm-5-free",
+          "minimax-m2.1-free", "qwen3.6-plus-free", "ling-2.6-flash-free",
+          "grok-code", "mimo-v2-flash-free", "hy3-preview-free",
+          "mimo-v2-pro-free", "mimo-v2-omni-free", "ring-2.6-1t-free",
+          "trinity-large-preview-free"
+        ];
 
-        chartData.forEach((value, i) => {
-          const barHeight = (value / max) * height;
+        // Create data array with counts for each model
+        const modelCounts = allModels.map(modelId => {
+          const stat = modelStats.find(s => s.model === modelId);
+          return stat ? stat.count : 0;
+        });
+
+        const max = Math.max(...modelCounts, 1);
+        const barWidth = width / 16;
+
+        modelCounts.forEach((count, i) => {
+          const barHeight = (count / max) * height;
           const x = i * barWidth;
           const y = height - barHeight;
 
+          // Color gradient based on index
+          const colors = [
+            ['#c0c1ff', '#8083ff'], // primary
+            ['#4cd7f6', '#03b5d3'], // secondary
+            ['#ffb783', '#d97721']  // tertiary
+          ];
+          const colorPair = colors[i % 3];
+
           const gradient = ctx.createLinearGradient(0, y, 0, height);
-          gradient.addColorStop(0, '#c0c1ff');
-          gradient.addColorStop(1, '#4cd7f6');
+          gradient.addColorStop(0, colorPair[0]);
+          gradient.addColorStop(1, colorPair[1]);
 
           ctx.fillStyle = gradient;
-          ctx.fillRect(x, y, barWidth - 2, barHeight);
+          ctx.fillRect(x + 1, y, barWidth - 2, barHeight);
         });
       }
 
