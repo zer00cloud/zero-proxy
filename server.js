@@ -405,21 +405,7 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, "http://x");
   try {
-    if (req.method === "GET" && url.pathname === "/") {
-      logResponse(200, { endpoint: "status" });
-      return json(res, 200, {
-        service: "zen-proxy",
-        upstream: UPSTREAM,
-        upstream_auth: UPSTREAM_KEY ? "key-set" : "anonymous",
-        models: AUTO_FALLBACK_CHAIN,
-        endpoints: [
-          "/v1/models",
-          "/v1/chat/completions",
-          ...FREE_MODELS.map(m => `/v1/${m.id}/chat/completions`)
-        ],
-      });
-    }
-    if (req.method === "GET" && url.pathname === "/dashboard") {
+    if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/dashboard")) {
       log(`📄 Serving dashboard`);
       try {
         const html = fs.readFileSync("./public/index.html", "utf8");
