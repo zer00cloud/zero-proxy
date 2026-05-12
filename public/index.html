@@ -1029,14 +1029,14 @@
         if (tunnelActive && tunnelUrl) {
           const tunnelEndpoint = `${tunnelUrl}/v1`;
           document.getElementById('endpoint-tunnel').textContent = tunnelEndpoint;
-          document.getElementById('tunnel-toggle-btn').classList.remove('bg-secondary/10', 'text-secondary');
-          document.getElementById('tunnel-toggle-btn').classList.add('bg-error/10', 'text-error');
+          document.getElementById('tunnel-toggle-btn').classList.remove('text-secondary');
+          document.getElementById('tunnel-toggle-btn').classList.add('text-error');
           // Show copy button when tunnel is active
           tunnelCopyBtn.classList.remove('hidden');
         } else {
           document.getElementById('endpoint-tunnel').textContent = 'Not active';
-          document.getElementById('tunnel-toggle-btn').classList.remove('bg-error/10', 'text-error');
-          document.getElementById('tunnel-toggle-btn').classList.add('bg-secondary/10', 'text-secondary');
+          document.getElementById('tunnel-toggle-btn').classList.remove('text-error');
+          document.getElementById('tunnel-toggle-btn').classList.add('text-secondary');
           // Hide copy button when tunnel is not active
           tunnelCopyBtn.classList.add('hidden');
         }
