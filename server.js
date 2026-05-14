@@ -5,6 +5,8 @@ import { FREE_MODELS, AUTO_FALLBACK_CHAIN, MODEL_IDS } from "./models.js";
 import { statsTracker } from "./stats.js";
 import { apiKeyManager } from "./api-keys.js";
 import { disabledModelsManager } from "./disabled-models.js";
+import { userTokenManager } from "./user-tokens.js";
+import { responsesToCompletions, completionsToResponses, convertStreamChunk, formatSSE } from "./responses-api.js";
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -373,6 +375,163 @@ async function handleModelSpecificRequest(req, res, modelId) {
   res.end(r.body);
 }
 
+// Handle Responses API endpoint
+async function handleResponses(req, res) {
+  const startTime = Date.now();
+  const raw = await readBody(req);
+  let payload;
+  try {
+    payload = JSON.parse(raw || "{}");
+  } catch {
+    logResponse(400, { error: "invalid JSON body" });
+    return json(res, 400, { error: { message: "invalid JSON body" } });
+  }
+
+  log(`🔄 Responses API request: model=${payload.model || "auto"}, stream=${payload.stream || false}`);
+
+  // Check for user token (X-User-Id header)
+  const userId = req.headers["x-user-id"];
+  let userApiKey = null;
+  if (userId && userTokenManager.userExists(userId)) {
+    userApiKey = userTokenManager.getToken(userId, "opencode");
+  }
+
+  // Convert Responses API format to Chat Completions format
+  const completionsPayload = responsesToCompletions(payload);
+
+  if (payload.stream) {
+    const model = completionsPayload.model && MODEL_IDS.has(completionsPayload.model)
+      ? completionsPayload.model
+      : AUTO_FALLBACK_CHAIN[0];
+
+    if (disabledModelsManager.isDisabled(model)) {
+      log(`🚫 Model ${model} is disabled globally`);
+      return json(res, 403, { error: { message: `Model ${model} is disabled` } });
+    }
+
+    const headers = { "Content-Type": "application/json" };
+
+    // Priority: user token > model API key > upstream key
+    if (userApiKey) {
+      headers["Authorization"] = `Bearer ${userApiKey}`;
+      log(`🔑 Using user token for ${model}`);
+    } else {
+      const modelApiKey = apiKeyManager.getKey(model);
+      if (modelApiKey) {
+        headers["Authorization"] = `Bearer ${modelApiKey}`;
+      } else if (UPSTREAM_KEY) {
+        headers["Authorization"] = `Bearer ${UPSTREAM_KEY}`;
+      }
+    }
+
+    const upstream = await fetch(`${UPSTREAM}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...completionsPayload, model, stream: true }),
+    });
+
+    if (upstream.status >= 400) {
+      const errBody = await upstream.text();
+      const latency = Date.now() - startTime;
+      logResponse(upstream.status, { model, latency: `${latency}ms`, type: "stream-error" });
+      statsTracker.recordRequest(model, latency, upstream.status, 0);
+      res.writeHead(upstream.status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+      return res.end(errBody);
+    }
+
+    // Stream with Responses API SSE format
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+    });
+
+    const state = { model };
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") {
+          res.write("event: response.completed\ndata: [DONE]\n\n");
+          continue;
+        }
+        try {
+          const chunk = JSON.parse(data);
+          const events = convertStreamChunk(chunk, state);
+          for (const event of events) {
+            res.write(formatSSE(event));
+          }
+        } catch {
+          // Skip unparseable chunks
+        }
+      }
+    }
+
+    res.end();
+    const latency = Date.now() - startTime;
+    logResponse(200, { model, latency: `${latency}ms`, type: "responses-stream" });
+    statsTracker.recordRequest(model, latency, 200, 0);
+    return;
+  }
+
+  // Non-streaming: use fallback chain
+  // Override auth if user has their own token
+  const extraHeaders = {};
+  if (userApiKey) {
+    extraHeaders["Authorization"] = `Bearer ${userApiKey}`;
+    log(`🔑 Using user token`);
+  }
+
+  const r = await callWithFallback("/chat/completions", completionsPayload);
+  const latency = Date.now() - startTime;
+
+  let tokens = 0;
+  let completionsResponse = {};
+  try {
+    completionsResponse = JSON.parse(r.body);
+    if (completionsResponse.usage?.total_tokens) {
+      tokens = completionsResponse.usage.total_tokens;
+    }
+  } catch {
+    // Pass through error
+    logResponse(r.status, { error: "upstream parse error", latency: `${latency}ms` });
+    statsTracker.recordRequest(r.triedModel, latency, r.status, 0);
+    res.writeHead(r.status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+    return res.end(r.body);
+  }
+
+  statsTracker.recordRequest(r.triedModel, latency, r.status, tokens);
+
+  if (r.status >= 400) {
+    logResponse(r.status, { model: r.triedModel, latency: `${latency}ms` });
+    res.writeHead(r.status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+    return res.end(r.body);
+  }
+
+  // Convert response to Responses API format
+  const responsesBody = completionsToResponses(completionsResponse, payload);
+  logResponse(200, { model: r.triedModel, latency: `${latency}ms`, type: "responses" });
+
+  res.writeHead(200, {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "X-Zen-Proxy-Model": r.triedModel,
+  });
+  res.end(JSON.stringify(responsesBody));
+}
+
 function handleModels(res) {
   const data = FREE_MODELS.map((m) => ({
     id: m.id,
@@ -392,8 +551,8 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-      "Access-Control-Allow-Headers": "Authorization,Content-Type",
+      "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+      "Access-Control-Allow-Headers": "Authorization,Content-Type,X-CSRF-Token,X-User-Id",
     });
     return res.end();
   }
@@ -430,6 +589,7 @@ const server = http.createServer(async (req, res) => {
         endpoints: [
           "/v1/models",
           "/v1/chat/completions",
+          "/v1/responses",
           ...FREE_MODELS.map(m => `/v1/${m.id}/chat/completions`)
         ],
       });
@@ -674,6 +834,66 @@ const server = http.createServer(async (req, res) => {
       }
 
       return await handleModelSpecificRequest(req, res, model.id);
+    }
+    // Responses API endpoint
+    if (
+      req.method === "POST" &&
+      (url.pathname === "/v1/responses" || url.pathname === "/responses")
+    ) {
+      if (needsCSRF(req) && !validateCSRF(req)) {
+        logResponse(403, { error: "CSRF token required" });
+        return json(res, 403, { error: { message: "CSRF token required" } });
+      }
+      return await handleResponses(req, res);
+    }
+    // User token management endpoints
+    if (url.pathname === "/api/user/register" && req.method === "POST") {
+      const userId = userTokenManager.generateUserId();
+      userTokenManager.createUser(userId);
+      log(`👤 New user registered: ${userId.substring(0, 8)}...`);
+      return json(res, 200, { user_id: userId });
+    }
+    if (url.pathname === "/api/user/token" && req.method === "POST") {
+      const raw = await readBody(req);
+      let payload;
+      try {
+        payload = JSON.parse(raw || "{}");
+      } catch {
+        return json(res, 400, { error: { message: "invalid JSON body" } });
+      }
+      if (!payload.user_id || !payload.provider || !payload.token) {
+        return json(res, 400, { error: { message: "user_id, provider, and token required" } });
+      }
+      if (!userTokenManager.userExists(payload.user_id)) {
+        return json(res, 404, { error: { message: "user not found" } });
+      }
+      userTokenManager.setToken(payload.user_id, payload.provider, payload.token);
+      log(`🔑 Token saved for user ${payload.user_id.substring(0, 8)}... provider=${payload.provider}`);
+      return json(res, 200, { success: true });
+    }
+    if (url.pathname === "/api/user/token" && req.method === "DELETE") {
+      const raw = await readBody(req);
+      let payload;
+      try {
+        payload = JSON.parse(raw || "{}");
+      } catch {
+        return json(res, 400, { error: { message: "invalid JSON body" } });
+      }
+      if (!payload.user_id || !payload.provider) {
+        return json(res, 400, { error: { message: "user_id and provider required" } });
+      }
+      userTokenManager.deleteToken(payload.user_id, payload.provider);
+      return json(res, 200, { success: true });
+    }
+    if (url.pathname === "/api/user/providers" && req.method === "GET") {
+      const userId = url.searchParams.get("user_id");
+      if (!userId) {
+        return json(res, 400, { error: { message: "user_id query param required" } });
+      }
+      if (!userTokenManager.userExists(userId)) {
+        return json(res, 404, { error: { message: "user not found" } });
+      }
+      return json(res, 200, { providers: userTokenManager.getProviders(userId) });
     }
     logResponse(404, { error: `no route: ${req.method} ${url.pathname}` });
     json(res, 404, { error: { message: `no route: ${req.method} ${url.pathname}` } });

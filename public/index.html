@@ -204,29 +204,74 @@
                         </div>
                     </div>
                 </section>
+
+                <!-- Settings Section: API Mode & User Token -->
+                <section class="bg-surface-container-low border border-outline-variant/10 rounded-xl overflow-hidden">
+                    <div class="px-md py-sm border-b border-outline-variant/10 flex justify-between items-center">
+                        <div>
+                            <h2 class="font-headline-md text-headline-md text-on-surface">Settings</h2>
+                            <p class="font-label-sm text-label-sm text-on-surface-variant">API mode switch & user token isolation</p>
+                        </div>
+                    </div>
+                    <div class="p-md space-y-md">
+                        <!-- API Mode Switch -->
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-sm">
+                            <div class="flex-1">
+                                <h3 class="text-body-md font-semibold text-on-surface">API Mode</h3>
+                                <p class="text-label-sm text-on-surface-variant">Choose which API format to use for requests</p>
+                            </div>
+                            <div class="flex items-center gap-xs bg-surface-container rounded-lg p-1">
+                                <button id="mode-completions" onclick="setApiMode('completions')" class="px-4 py-2 rounded-md text-label-md font-semibold transition-all bg-primary text-on-primary">Chat Completions</button>
+                                <button id="mode-responses" onclick="setApiMode('responses')" class="px-4 py-2 rounded-md text-label-md font-semibold transition-all text-on-surface-variant hover:text-on-surface">Responses API</button>
+                            </div>
+                        </div>
+
+                        <!-- Mode Info -->
+                        <div id="mode-info" class="bg-surface-container rounded-lg p-sm">
+                            <div id="mode-info-completions">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="material-symbols-outlined text-primary text-[18px]">chat</span>
+                                    <span class="text-label-md font-semibold text-on-surface">Chat Completions Mode</span>
+                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-secondary/10 text-secondary border border-secondary/20">DEFAULT</span>
+                                </div>
+                                <code class="block text-body-sm text-on-surface-variant font-mono bg-surface-container-low rounded px-2 py-1.5">POST /v1/chat/completions</code>
+                                <p class="text-label-sm text-on-surface-variant mt-2">Standard OpenAI format. Compatible with all SDKs and tools.</p>
+                            </div>
+                            <div id="mode-info-responses" class="hidden">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="material-symbols-outlined text-tertiary-container text-[18px]">api</span>
+                                    <span class="text-label-md font-semibold text-on-surface">Responses API Mode</span>
+                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-tertiary/10 text-tertiary border border-tertiary/20">NEW</span>
+                                </div>
+                                <code class="block text-body-sm text-on-surface-variant font-mono bg-surface-container-low rounded px-2 py-1.5">POST /v1/responses</code>
+                                <p class="text-label-sm text-on-surface-variant mt-2">OpenAI Responses API format. Works with latest OpenAI SDK. Auto-converts to completions for backend compatibility.</p>
+                            </div>
+                        </div>
+
+                        <div class="border-t border-outline-variant/10 pt-md"></div>
+
+                        <!-- Isolation Info -->
+                        <div class="bg-surface-container rounded-lg p-sm">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="material-symbols-outlined text-secondary text-[18px]">shield</span>
+                                <span class="text-label-md font-semibold text-on-surface">Auto-Isolated Instance</span>
+                                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-secondary/10 text-secondary border border-secondary/20">SECURE</span>
+                            </div>
+                            <p class="text-label-sm text-on-surface-variant">This instance is fully isolated. Your API keys, tokens, stats, and data are stored locally and never shared with anyone. Each clone of this project runs independently.</p>
+                        </div>
+
+                        <!-- Usage Example -->
+                        <div class="border-t border-outline-variant/10 pt-md">
+                            <h3 class="text-body-md font-semibold text-on-surface mb-2">Usage Example</h3>
+                            <div id="usage-example" class="bg-surface-container-low rounded-lg p-sm overflow-x-auto">
+                                <pre class="text-body-sm font-mono text-on-surface-variant whitespace-pre" id="usage-code"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </section>
             </div>
         </main>
     </div>
-
-    <!-- Mobile Bottom Navigation -->
-    <nav class="md:hidden flex justify-around items-center bg-surface-container border-t border-outline-variant/10 h-16 fixed bottom-0 left-0 w-full z-50">
-        <button class="flex flex-col items-center gap-1 text-primary">
-            <span class="material-symbols-outlined">dashboard</span>
-            <span class="text-[10px] font-medium">Dashboard</span>
-        </button>
-        <button class="flex flex-col items-center gap-1 text-on-surface-variant">
-            <span class="material-symbols-outlined">router</span>
-            <span class="text-[10px] font-medium">Proxies</span>
-        </button>
-        <button class="flex flex-col items-center gap-1 text-on-surface-variant">
-            <span class="material-symbols-outlined">bar_chart</span>
-            <span class="text-[10px] font-medium">Usage</span>
-        </button>
-        <button class="flex flex-col items-center gap-1 text-on-surface-variant">
-            <span class="material-symbols-outlined">settings</span>
-            <span class="text-[10px] font-medium">Settings</span>
-        </button>
-    </nav>
 
     <!-- Test Modal (Hidden by default) -->
     <div id="test-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-gutter">
@@ -1226,6 +1271,7 @@
         await detectTunnel();
         await loadModels();
         await updateStats();
+        initSettings();
         pollTimer = setInterval(updateStats, pollInterval);
 
         // Handle window resize
@@ -1236,6 +1282,70 @@
             updateStats();
           }, 250);
         });
+      }
+
+      // --- Settings: API Mode ---
+      let apiMode = localStorage.getItem('zen-api-mode') || 'completions';
+
+      function initSettings() {
+        setApiMode(apiMode);
+        updateUsageExample();
+      }
+
+      function setApiMode(mode) {
+        apiMode = mode;
+        localStorage.setItem('zen-api-mode', mode);
+
+        const btnCompletions = document.getElementById('mode-completions');
+        const btnResponses = document.getElementById('mode-responses');
+        const infoCompletions = document.getElementById('mode-info-completions');
+        const infoResponses = document.getElementById('mode-info-responses');
+
+        if (mode === 'completions') {
+          btnCompletions.className = 'px-4 py-2 rounded-md text-label-md font-semibold transition-all bg-primary text-on-primary';
+          btnResponses.className = 'px-4 py-2 rounded-md text-label-md font-semibold transition-all text-on-surface-variant hover:text-on-surface';
+          infoCompletions.classList.remove('hidden');
+          infoResponses.classList.add('hidden');
+        } else {
+          btnResponses.className = 'px-4 py-2 rounded-md text-label-md font-semibold transition-all bg-tertiary-container text-on-tertiary-container';
+          btnCompletions.className = 'px-4 py-2 rounded-md text-label-md font-semibold transition-all text-on-surface-variant hover:text-on-surface';
+          infoResponses.classList.remove('hidden');
+          infoCompletions.classList.add('hidden');
+        }
+        updateUsageExample();
+      }
+
+      function updateUsageExample() {
+        const codeEl = document.getElementById('usage-code');
+        const baseUrl = window.location.origin;
+
+        if (apiMode === 'completions') {
+          codeEl.textContent = `// Chat Completions Mode
+const response = await fetch("${baseUrl}/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "minimax-m2.5-free",
+    messages: [{ role: "user", content: "Hello!" }],
+    stream: false
+  })
+});`;
+        } else {
+          codeEl.textContent = `// Responses API Mode
+const response = await fetch("${baseUrl}/v1/responses", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "minimax-m2.5-free",
+    input: "Hello!",
+    stream: false
+  })
+});`;
+        }
       }
 
       init();
