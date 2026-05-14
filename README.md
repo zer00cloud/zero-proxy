@@ -32,3 +32,51 @@ Default listens on `0.0.0.0:8787`.
 
 See `.env.example`. Set `OPENCODE_API_KEY` to unlock the full free catalog.
 Set `PROXY_KEY` to require clients to authenticate.
+
+
+
+
+
+
+
+  Install di Termux (Android):
+
+  pkg update && pkg install nodejs git
+  git clone https://github.com/zer00cloud/zero-proxy.git
+  cd zero-proxy
+  node server.js
+
+  Akses di browser: http://localhost:8787
+
+  ---
+  Install di Server (Ubuntu/Debian):
+  
+  sudo apt update && sudo apt install -y nodejs npm git
+  git clone https://github.com/zer00cloud/zero-proxy.git
+  cd zero-proxy
+  node server.js
+
+  ---
+  Install di Server (dengan PM2 untuk auto-restart):
+  
+  git clone https://github.com/zer00cloud/zero-proxy.git
+  cd zero-proxy
+  npm install -g pm2
+  pm2 start ecosystem.config.cjs
+  pm2 save
+
+  ---
+  Cara pakai:
+  
+  ┌────────────────────────────┬───────────────────────────┬─────────────────────┐
+  │            Mode            │         Endpoint          │       Format        │
+  ├────────────────────────────┼───────────────────────────┼─────────────────────┤
+  │ Chat Completions (default) │ POST /v1/chat/completions │ { messages: [...] } │
+  ├────────────────────────────┼───────────────────────────┼─────────────────────┤
+  │ Responses API (baru)       │ POST /v1/responses        │ { input: "..." }    │
+  └────────────────────────────┴───────────────────────────┴─────────────────────┘
+
+  Untuk n8n OpenAI node:
+  - Base URL: http://<IP>:8787/v1
+  - API Key: isi sembarang (misal sk-dummy) atau kosong
+
