@@ -6,7 +6,12 @@ import { statsTracker } from "./stats.js";
 import { apiKeyManager } from "./api-keys.js";
 import { disabledModelsManager } from "./disabled-models.js";
 import { userTokenManager } from "./user-tokens.js";
+import { rateLimiter } from "./rate-limiter.js";
+import { instanceManager } from "./instance.js";
 import { responsesToCompletions, completionsToResponses, convertStreamChunk, formatSSE } from "./responses-api.js";
+
+// Initialize instance (auto-generates password + ID on first run)
+const instanceData = instanceManager.init();
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -14,9 +19,106 @@ const UPSTREAM = "https://opencode.ai/zen/v1";
 const UPSTREAM_KEY = process.env.OPENCODE_API_KEY || ""; // optional; unlocks the full catalog
 const PROXY_KEY = process.env.PROXY_KEY || ""; // if set, clients must send matching Bearer
 const TUNNEL_URL = process.env.TUNNEL_URL || ""; // Cloudflare tunnel URL if active
+const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || instanceData.password;
+const SHOW_PASSWORD_ON_LOGIN = true; // show password hint on login page
 
 // CSRF token management
 const validTokens = new Map(); // Map<token, expiryTime>
+
+// Session management
+const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const sessions = new Map(); // Map<sessionToken, { userId, expiresAt }>
+
+function createSession(userId) {
+  const token = crypto.randomUUID();
+  sessions.set(token, { userId, expiresAt: Date.now() + SESSION_TTL });
+  return token;
+}
+
+function getSession(token) {
+  const session = sessions.get(token);
+  if (!session) return null;
+  if (Date.now() >= session.expiresAt) {
+    sessions.delete(token);
+    return null;
+  }
+  return session;
+}
+
+function destroySession(token) {
+  sessions.delete(token);
+}
+
+// Cleanup expired sessions every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of sessions.entries()) {
+    if (now >= session.expiresAt) sessions.delete(token);
+  }
+}, 600000);
+
+// Resolve user from request (X-User-Id header, Bearer token, or session cookie)
+function resolveUser(req) {
+  // 1. Check X-User-Id header
+  const userIdHeader = req.headers["x-user-id"];
+  if (userIdHeader && userTokenManager.userExists(userIdHeader)) {
+    return userIdHeader;
+  }
+
+  // 2. Check Authorization Bearer token (if not the PROXY_KEY)
+  const authHeader = req.headers["authorization"] || "";
+  if (authHeader.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    if (token !== PROXY_KEY) {
+      const userId = userTokenManager.findUserByToken("opencode", token);
+      if (userId) return userId;
+    }
+  }
+
+  // 3. Check session cookie
+  const cookies = parseCookies(req.headers["cookie"] || "");
+  if (cookies.session) {
+    const session = getSession(cookies.session);
+    if (session) return session.userId;
+  }
+
+  return null;
+}
+
+function parseCookies(cookieHeader) {
+  const cookies = {};
+  cookieHeader.split(";").forEach(pair => {
+    const [key, ...val] = pair.trim().split("=");
+    if (key) cookies[key.trim()] = val.join("=").trim();
+  });
+  return cookies;
+}
+
+// Rate limit check — returns null if allowed, or a response object if blocked
+function checkRateLimit(userId) {
+  if (!userId) return null; // anonymous users bypass (controlled by PROXY_KEY)
+  if (!rateLimiter.isAllowed(userId)) {
+    const retryAfter = rateLimiter.getRetryAfter(userId);
+    return {
+      status: 429,
+      body: {
+        error: {
+          message: `Rate limit exceeded. Try again in ${retryAfter} seconds.`,
+          type: "rate_limit_error",
+          retry_after: retryAfter,
+        }
+      },
+      headers: { "Retry-After": String(retryAfter) },
+    };
+  }
+  return null;
+}
+
+// Record request after model is known
+function recordUserRequest(userId, model) {
+  if (!userId) return;
+  rateLimiter.recordRequest(userId, model);
+}
 
 function generateCSRFToken() {
   const token = crypto.randomUUID();
@@ -128,7 +230,7 @@ async function callUpstream(path, payload, extraHeaders = {}) {
 // Try the client's requested model, then fall back through the chain on 4xx/5xx.
 // Streaming is not retried — if the client asked for stream and the first model
 // fails, we report that failure (can't unwind a partial stream).
-async function callWithFallback(path, payload) {
+async function callWithFallback(path, payload, userId = null) {
   const requested = payload.model;
   let chain;
 
@@ -161,9 +263,22 @@ async function callWithFallback(path, payload) {
       continue;
     }
 
+    // Skip models that are cooled down for this user
+    if (userId && rateLimiter.isModelCooledDown(userId, model)) {
+      log(`⏭️  Skipping cooled-down model for user ${userId.substring(0, 8)}...: ${model}`);
+      continue;
+    }
+
     const r = await callUpstream(path, { ...payload, model });
     last = { ...r, triedModel: model };
     if (r.status >= 200 && r.status < 300) return last;
+
+    // On 429: set per-user cooldown for this model
+    if (r.status === 429 && userId) {
+      rateLimiter.setCooldown(userId, model);
+      log(`🧊 Cooldown set for user ${userId.substring(0, 8)}... on model ${model}`);
+    }
+
     // Only fall through on upstream-reported failures. 429 rate-limit also
     // triggers fallback since the next model may be on a different upstream.
     if (r.status !== 401 && r.status !== 400 && r.status !== 429 && r.status < 500) {
@@ -177,7 +292,7 @@ async function callWithFallback(path, payload) {
     return {
       status: 403,
       headers: new Headers(),
-      body: JSON.stringify({ error: { message: "All available models are disabled" } }),
+      body: JSON.stringify({ error: { message: "All available models are disabled or cooled down" } }),
       triedModel: requested || "auto"
     };
   }
@@ -187,6 +302,20 @@ async function callWithFallback(path, payload) {
 
 async function handleChatCompletions(req, res) {
   const startTime = Date.now();
+  const userId = resolveUser(req);
+
+  // Per-user rate limit check
+  const rateLimitResult = checkRateLimit(userId);
+  if (rateLimitResult) {
+    logResponse(429, { userId: userId?.substring(0, 8), error: "rate limit" });
+    res.writeHead(429, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Retry-After": rateLimitResult.headers["Retry-After"],
+    });
+    return res.end(JSON.stringify(rateLimitResult.body));
+  }
+
   const raw = await readBody(req);
   let payload;
   try {
@@ -196,7 +325,7 @@ async function handleChatCompletions(req, res) {
     return json(res, 400, { error: { message: "invalid JSON body" } });
   }
 
-  log(`🔄 Chat request: model=${payload.model || "auto"}, stream=${payload.stream || false}`);
+  log(`🔄 Chat request: model=${payload.model || "auto"}, stream=${payload.stream || false}, user=${userId?.substring(0, 8) || "anon"}`);
 
   if (payload.stream) {
     // Stream straight to upstream with no fallback (see note above).
@@ -209,6 +338,13 @@ async function handleChatCompletions(req, res) {
       log(`🚫 Model ${model} is disabled globally`);
       logResponse(403, { error: `Model ${model} is disabled` });
       return json(res, 403, { error: { message: `Model ${model} is disabled` } });
+    }
+
+    // Check per-user cooldown for streaming
+    if (userId && rateLimiter.isModelCooledDown(userId, model)) {
+      log(`🧊 Model ${model} cooled down for user ${userId.substring(0, 8)}...`);
+      logResponse(429, { error: `Model ${model} cooled down` });
+      return json(res, 429, { error: { message: `Model ${model} is temporarily unavailable. Try another model.` } });
     }
 
     const headers = { "Content-Type": "application/json" };
@@ -230,6 +366,13 @@ async function handleChatCompletions(req, res) {
       headers,
       body: JSON.stringify({ ...payload, model }),
     });
+
+    // If upstream returns 429 during stream, set cooldown for this user
+    if (upstream.status === 429 && userId) {
+      rateLimiter.setCooldown(userId, model);
+      log(`🧊 Cooldown set for user ${userId.substring(0, 8)}... on model ${model}`);
+    }
+
     res.writeHead(upstream.status, {
       "Content-Type": upstream.headers.get("content-type") || "text/event-stream",
       "Access-Control-Allow-Origin": "*",
@@ -247,11 +390,12 @@ async function handleChatCompletions(req, res) {
     logResponse(upstream.status, { model, latency: `${latency}ms`, type: "stream" });
 
     // Record stats (estimate tokens for streaming)
+    recordUserRequest(userId, model);
     statsTracker.recordRequest(model, latency, upstream.status, 0);
     return;
   }
 
-  const r = await callWithFallback("/chat/completions", payload);
+  const r = await callWithFallback("/chat/completions", payload, userId);
   const latency = Date.now() - startTime;
   logResponse(r.status, {
     requested: payload.model || "auto",
@@ -272,6 +416,7 @@ async function handleChatCompletions(req, res) {
   }
 
   // Record stats
+  recordUserRequest(userId, r.triedModel);
   statsTracker.recordRequest(r.triedModel, latency, r.status, tokens);
 
   res.writeHead(r.status, {
@@ -285,13 +430,33 @@ async function handleChatCompletions(req, res) {
 // Handle model-specific endpoint (no fallback)
 async function handleModelSpecificRequest(req, res, modelId) {
   const startTime = Date.now();
-  log(`🎯 Model-specific request: ${modelId}`);
+  const userId = resolveUser(req);
+
+  // Per-user rate limit check
+  const rateLimitResult = checkRateLimit(userId);
+  if (rateLimitResult) {
+    logResponse(429, { userId: userId?.substring(0, 8), error: "rate limit" });
+    res.writeHead(429, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Retry-After": rateLimitResult.headers["Retry-After"],
+    });
+    return res.end(JSON.stringify(rateLimitResult.body));
+  }
+
+  log(`🎯 Model-specific request: ${modelId}, user=${userId?.substring(0, 8) || "anon"}`);
 
   // Check if model is disabled globally
   if (disabledModelsManager.isDisabled(modelId)) {
     log(`🚫 Model ${modelId} is disabled globally`);
     logResponse(403, { error: `Model ${modelId} is disabled` });
     return json(res, 403, { error: { message: `Model ${modelId} is disabled` } });
+  }
+
+  // Check per-user cooldown
+  if (userId && rateLimiter.isModelCooledDown(userId, modelId)) {
+    log(`🧊 Model ${modelId} cooled down for user ${userId.substring(0, 8)}...`);
+    return json(res, 429, { error: { message: `Model ${modelId} is temporarily unavailable. Try again later.` } });
   }
 
   const raw = await readBody(req);
@@ -327,6 +492,13 @@ async function handleModelSpecificRequest(req, res, modelId) {
       headers,
       body: JSON.stringify(payload),
     });
+
+    // Set per-user cooldown on 429
+    if (upstream.status === 429 && userId) {
+      rateLimiter.setCooldown(userId, modelId);
+      log(`🧊 Cooldown set for user ${userId.substring(0, 8)}... on model ${modelId}`);
+    }
+
     res.writeHead(upstream.status, {
       "Content-Type": upstream.headers.get("content-type") || "text/event-stream",
       "Access-Control-Allow-Origin": "*",
@@ -343,6 +515,7 @@ async function handleModelSpecificRequest(req, res, modelId) {
     const latency = Date.now() - startTime;
     logResponse(upstream.status, { model: modelId, latency: `${latency}ms`, type: "stream" });
 
+    recordUserRequest(userId, modelId);
     statsTracker.recordRequest(modelId, latency, upstream.status, 0);
     return;
   }
@@ -350,6 +523,13 @@ async function handleModelSpecificRequest(req, res, modelId) {
   // Non-streaming: call upstream directly (no fallback)
   const r = await callUpstream("/chat/completions", payload);
   const latency = Date.now() - startTime;
+
+  // Set per-user cooldown on 429
+  if (r.status === 429 && userId) {
+    rateLimiter.setCooldown(userId, modelId);
+    log(`🧊 Cooldown set for user ${userId.substring(0, 8)}... on model ${modelId}`);
+  }
+
   logResponse(r.status, { model: modelId, latency: `${latency}ms` });
 
   // Extract token usage
@@ -365,6 +545,7 @@ async function handleModelSpecificRequest(req, res, modelId) {
   }
 
   // Record stats
+  recordUserRequest(userId, modelId);
   statsTracker.recordRequest(modelId, latency, r.status, tokens);
 
   res.writeHead(r.status, {
@@ -378,6 +559,20 @@ async function handleModelSpecificRequest(req, res, modelId) {
 // Handle Responses API endpoint
 async function handleResponses(req, res) {
   const startTime = Date.now();
+  const userId = resolveUser(req);
+
+  // Per-user rate limit check
+  const rateLimitResult = checkRateLimit(userId);
+  if (rateLimitResult) {
+    logResponse(429, { userId: userId?.substring(0, 8), error: "rate limit" });
+    res.writeHead(429, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Retry-After": rateLimitResult.headers["Retry-After"],
+    });
+    return res.end(JSON.stringify(rateLimitResult.body));
+  }
+
   const raw = await readBody(req);
   let payload;
   try {
@@ -387,10 +582,9 @@ async function handleResponses(req, res) {
     return json(res, 400, { error: { message: "invalid JSON body" } });
   }
 
-  log(`🔄 Responses API request: model=${payload.model || "auto"}, stream=${payload.stream || false}`);
+  log(`🔄 Responses API request: model=${payload.model || "auto"}, stream=${payload.stream || false}, user=${userId?.substring(0, 8) || "anon"}`);
 
-  // Check for user token (X-User-Id header)
-  const userId = req.headers["x-user-id"];
+  // Check for user token (X-User-Id header or resolved user)
   let userApiKey = null;
   if (userId && userTokenManager.userExists(userId)) {
     userApiKey = userTokenManager.getToken(userId, "opencode");
@@ -431,9 +625,15 @@ async function handleResponses(req, res) {
     });
 
     if (upstream.status >= 400) {
+      // Set per-user cooldown on 429
+      if (upstream.status === 429 && userId) {
+        rateLimiter.setCooldown(userId, model);
+        log(`🧊 Cooldown set for user ${userId.substring(0, 8)}... on model ${model}`);
+      }
       const errBody = await upstream.text();
       const latency = Date.now() - startTime;
       logResponse(upstream.status, { model, latency: `${latency}ms`, type: "stream-error" });
+      recordUserRequest(userId, model);
       statsTracker.recordRequest(model, latency, upstream.status, 0);
       res.writeHead(upstream.status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
       return res.end(errBody);
@@ -482,6 +682,7 @@ async function handleResponses(req, res) {
     res.end();
     const latency = Date.now() - startTime;
     logResponse(200, { model, latency: `${latency}ms`, type: "responses-stream" });
+    recordUserRequest(userId, model);
     statsTracker.recordRequest(model, latency, 200, 0);
     return;
   }
@@ -494,7 +695,7 @@ async function handleResponses(req, res) {
     log(`🔑 Using user token`);
   }
 
-  const r = await callWithFallback("/chat/completions", completionsPayload);
+  const r = await callWithFallback("/chat/completions", completionsPayload, userId);
   const latency = Date.now() - startTime;
 
   let tokens = 0;
@@ -507,11 +708,13 @@ async function handleResponses(req, res) {
   } catch {
     // Pass through error
     logResponse(r.status, { error: "upstream parse error", latency: `${latency}ms` });
+    recordUserRequest(userId, r.triedModel);
     statsTracker.recordRequest(r.triedModel, latency, r.status, 0);
     res.writeHead(r.status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
     return res.end(r.body);
   }
 
+  recordUserRequest(userId, r.triedModel);
   statsTracker.recordRequest(r.triedModel, latency, r.status, tokens);
 
   if (r.status >= 400) {
@@ -564,14 +767,97 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, "http://x");
   try {
+    // Login page (no auth required)
+    if (req.method === "GET" && url.pathname === "/login") {
+      try {
+        let html = fs.readFileSync("./public/login.html", "utf8");
+        // Inject password into login page if configured to show
+        if (SHOW_PASSWORD_ON_LOGIN) {
+          html = html.replace("{{PASSWORD_HINT}}", DASHBOARD_PASSWORD);
+          html = html.replace("{{SHOW_HINT}}", "true");
+        } else {
+          html = html.replace("{{PASSWORD_HINT}}", "");
+          html = html.replace("{{SHOW_HINT}}", "false");
+        }
+        res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-cache" });
+        return res.end(html);
+      } catch (err) {
+        log("❌ Failed to load login page:", err.message);
+        return json(res, 500, { error: { message: "Login page not found" } });
+      }
+    }
+
+    // Login endpoint
+    if (req.method === "POST" && url.pathname === "/api/auth/login") {
+      const raw = await readBody(req);
+      let payload;
+      try {
+        payload = JSON.parse(raw || "{}");
+      } catch {
+        return json(res, 400, { error: { message: "invalid JSON body" } });
+      }
+      if (!payload.password) {
+        return json(res, 400, { error: { message: "password required" } });
+      }
+
+      // Check against global dashboard password
+      if (payload.password !== DASHBOARD_PASSWORD) {
+        log(`🚫 Login failed: invalid password`);
+        return json(res, 401, { error: { message: "Invalid password" } });
+      }
+
+      // Create a new user for this session
+      const userId = userTokenManager.generateUserId();
+      userTokenManager.createUser(userId);
+
+      const sessionToken = createSession(userId);
+      log(`✅ Login success: new session for user ${userId.substring(0, 8)}...`);
+
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Set-Cookie": `session=${sessionToken}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`,
+      });
+      return res.end(JSON.stringify({ success: true, user_id: userId, session: sessionToken }));
+    }
+
+    // Logout endpoint
+    if (req.method === "POST" && url.pathname === "/api/auth/logout") {
+      const cookies = parseCookies(req.headers["cookie"] || "");
+      if (cookies.session) {
+        destroySession(cookies.session);
+      }
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Set-Cookie": `session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`,
+      });
+      return res.end(JSON.stringify({ success: true }));
+    }
+
+    // Check session endpoint
+    if (req.method === "GET" && url.pathname === "/api/auth/me") {
+      const cookies = parseCookies(req.headers["cookie"] || "");
+      const session = cookies.session ? getSession(cookies.session) : null;
+      if (!session) {
+        return json(res, 401, { error: { message: "Not authenticated" } });
+      }
+      return json(res, 200, { user_id: session.userId, authenticated: true });
+    }
+
+    // Dashboard requires session
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/dashboard")) {
-      log(`📄 Serving dashboard`);
+      const cookies = parseCookies(req.headers["cookie"] || "");
+      const session = cookies.session ? getSession(cookies.session) : null;
+      if (!session) {
+        // Redirect to login
+        res.writeHead(302, { "Location": "/login" });
+        return res.end();
+      }
+      log(`📄 Serving dashboard for user ${session.userId.substring(0, 8)}...`);
       try {
         const html = fs.readFileSync("./public/index.html", "utf8");
-        res.writeHead(200, {
-          "Content-Type": "text/html",
-          "Cache-Control": "no-cache"
-        });
+        res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-cache" });
         return res.end(html);
       } catch (err) {
         log("❌ Failed to load dashboard:", err.message);
@@ -895,6 +1181,51 @@ const server = http.createServer(async (req, res) => {
       }
       return json(res, 200, { providers: userTokenManager.getProviders(userId) });
     }
+    // Rate limit management endpoints
+    if (url.pathname === "/api/user/rate-limit" && req.method === "POST") {
+      const raw = await readBody(req);
+      let payload;
+      try {
+        payload = JSON.parse(raw || "{}");
+      } catch {
+        return json(res, 400, { error: { message: "invalid JSON body" } });
+      }
+      if (!payload.user_id || !payload.limit) {
+        return json(res, 400, { error: { message: "user_id and limit required" } });
+      }
+      if (!userTokenManager.userExists(payload.user_id)) {
+        return json(res, 404, { error: { message: "user not found" } });
+      }
+      const limit = Math.max(1, Math.min(1000, Number(payload.limit)));
+      userTokenManager.setRateLimit(payload.user_id, limit);
+      rateLimiter.setUserLimit(payload.user_id, limit);
+      log(`⚙️  Rate limit set for user ${payload.user_id.substring(0, 8)}...: ${limit} req/min`);
+      return json(res, 200, { success: true, limit });
+    }
+    if (url.pathname === "/api/user/rate-limit" && req.method === "GET") {
+      const userId = url.searchParams.get("user_id");
+      if (!userId) {
+        return json(res, 400, { error: { message: "user_id query param required" } });
+      }
+      if (!userTokenManager.userExists(userId)) {
+        return json(res, 404, { error: { message: "user not found" } });
+      }
+      const limit = rateLimiter.getUserLimit(userId);
+      const remaining = rateLimiter.getRemainingRequests(userId);
+      const models = rateLimiter.getUserModelStats(userId);
+      return json(res, 200, { user_id: userId, limit, remaining, models });
+    }
+    // Get current user's own rate limit status (from session)
+    if (url.pathname === "/api/my/rate-limit" && req.method === "GET") {
+      const userId = resolveUser(req);
+      if (!userId) {
+        return json(res, 401, { error: { message: "Not authenticated" } });
+      }
+      const limit = rateLimiter.getUserLimit(userId);
+      const remaining = rateLimiter.getRemainingRequests(userId);
+      const models = rateLimiter.getUserModelStats(userId);
+      return json(res, 200, { user_id: userId, limit, remaining, models });
+    }
     logResponse(404, { error: `no route: ${req.method} ${url.pathname}` });
     json(res, 404, { error: { message: `no route: ${req.method} ${url.pathname}` } });
   } catch (err) {
@@ -905,6 +1236,24 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   log(`zen-proxy listening on http://${HOST}:${PORT}`);
+  log(`instance: ${instanceData.id}`);
   log(`upstream: ${UPSTREAM} (${UPSTREAM_KEY ? "with key" : "anonymous"})`);
   log(`auto-chain: ${AUTO_FALLBACK_CHAIN.join(" -> ")}`);
+
+  // Show dashboard password
+  if (process.env.DASHBOARD_PASSWORD) {
+    log(`🔐 Dashboard password: (from env)`);
+  } else {
+    log(`🔐 Dashboard password: ${instanceData.password} (auto-generated, saved in data/instance.json)`);
+  }
+
+  // Startup security warnings
+  if (!PROXY_KEY) {
+    log(`⚠️  PROXY_KEY not set — API endpoints are open without authentication`);
+  }
+  if (!UPSTREAM_KEY) {
+    log(`ℹ️  No OPENCODE_API_KEY — anonymous mode (upstream rate-limited by IP)`);
+  } else {
+    log(`🔑 OPENCODE_API_KEY set — ensure each instance uses a unique key`);
+  }
 });

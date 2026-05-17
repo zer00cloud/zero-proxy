@@ -90,6 +90,45 @@ function createUserTokenManager() {
     save();
   }
 
+  function setPassword(userId, password) {
+    if (!users[userId]) return;
+    users[userId].password = password;
+    save();
+  }
+
+  function verifyPassword(userId, password) {
+    if (!users[userId]) return false;
+    return users[userId].password === password;
+  }
+
+  function setRateLimit(userId, limit) {
+    if (!users[userId]) return;
+    users[userId].rateLimit = limit;
+    save();
+  }
+
+  function getRateLimit(userId) {
+    return users[userId]?.rateLimit || null;
+  }
+
+  function findUserByToken(provider, token) {
+    for (const [userId, data] of Object.entries(users)) {
+      if (data.tokens?.[provider] === token) return userId;
+    }
+    return null;
+  }
+
+  function findUserByPassword(password) {
+    for (const [userId, data] of Object.entries(users)) {
+      if (data.password === password) return userId;
+    }
+    return null;
+  }
+
+  function getAllUsers() {
+    return Object.keys(users);
+  }
+
   load();
 
   return {
@@ -102,6 +141,13 @@ function createUserTokenManager() {
     getProviders,
     userExists,
     deleteUser,
+    setPassword,
+    verifyPassword,
+    setRateLimit,
+    getRateLimit,
+    findUserByToken,
+    findUserByPassword,
+    getAllUsers,
   };
 }
 
