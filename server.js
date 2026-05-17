@@ -17,10 +17,18 @@ const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
 const UPSTREAM = "https://opencode.ai/zen/v1";
 const UPSTREAM_KEY = process.env.OPENCODE_API_KEY || ""; // optional; unlocks the full catalog
+const UPSTREAM_KEYS = parseKeyList(process.env.OPENCODE_API_KEYS || "");
 const PROXY_KEY = process.env.PROXY_KEY || ""; // if set, clients must send matching Bearer
 const TUNNEL_URL = process.env.TUNNEL_URL || ""; // Cloudflare tunnel URL if active
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || instanceData.password;
 const SHOW_PASSWORD_ON_LOGIN = true; // show password hint on login page
+const ALLOW_EXPLICIT_MODEL_FALLBACK = process.env.ALLOW_EXPLICIT_MODEL_FALLBACK === "true";
+const UPSTREAM_MAX_CONCURRENCY = Math.max(1, Number(process.env.UPSTREAM_MAX_CONCURRENCY || 4));
+const UPSTREAM_QUEUE_SIZE = Math.max(1, Number(process.env.UPSTREAM_QUEUE_SIZE || 100));
+let autoChainCursor = 0;
+let upstreamKeyCursor = 0;
+
+const upstreamScheduler = createUpstreamScheduler(UPSTREAM_MAX_CONCURRENCY, UPSTREAM_QUEUE_SIZE);
 
 // CSRF token management
 const validTokens = new Map(); // Map<token, expiryTime>
@@ -47,6 +55,62 @@ function getSession(token) {
 
 function destroySession(token) {
   sessions.delete(token);
+}
+
+function parseKeyList(value) {
+  if (!value) return [];
+  return [...new Set(
+    String(value)
+      .split(/[\n,]/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  )];
+}
+
+function createUpstreamScheduler(maxConcurrency, maxQueueSize) {
+  let active = 0;
+  const queue = [];
+
+  function releaseNext() {
+    if (active >= maxConcurrency || queue.length === 0) return;
+    active++;
+    const next = queue.shift();
+    next();
+  }
+
+  async function run(task) {
+    await new Promise((resolve, reject) => {
+      const start = () => resolve();
+      if (active < maxConcurrency) {
+        active++;
+        start();
+        return;
+      }
+      if (queue.length >= maxQueueSize) {
+        reject(new Error("Upstream queue is full"));
+        return;
+      }
+      queue.push(start);
+    });
+
+    try {
+      return await task();
+    } finally {
+      active--;
+      releaseNext();
+    }
+  }
+
+  function getStats() {
+    return {
+      active,
+      queued: queue.length,
+      max_concurrency: maxConcurrency,
+      max_queue_size: maxQueueSize,
+    };
+  }
+
+  return { run, getStats };
 }
 
 // Cleanup expired sessions every 10 minutes
@@ -97,6 +161,10 @@ function parseCookies(cookieHeader) {
 // Rate limit check — returns null if allowed, or a response object if blocked
 function checkRateLimit(userId) {
   if (!userId) return null; // anonymous users bypass (controlled by PROXY_KEY)
+  const savedLimit = userTokenManager.getRateLimit(userId);
+  if (savedLimit) {
+    rateLimiter.setUserLimit(userId, savedLimit);
+  }
   if (!rateLimiter.isAllowed(userId)) {
     const retryAfter = rateLimiter.getRetryAfter(userId);
     return {
@@ -197,32 +265,128 @@ function authOk(req) {
   return h === `Bearer ${PROXY_KEY}`;
 }
 
-// Use full model ID as endpoint path (no extraction needed)
-function getModelEndpoint(modelId) {
-  return modelId;
+function getUserUpstreamToken(userId) {
+  if (!userId || !userTokenManager.userExists(userId)) return null;
+  return userTokenManager.getToken(userId, "opencode");
 }
 
-// Call upstream once with a given model. Returns { status, headers, body }.
-async function callUpstream(path, payload, extraHeaders = {}) {
+function getAllowExplicitFallback(payload = {}) {
+  return payload.allow_fallback === true || ALLOW_EXPLICIT_MODEL_FALLBACK;
+}
+
+function sanitizeUpstreamPayload(payload = {}) {
+  const upstreamPayload = { ...payload };
+  delete upstreamPayload.allow_fallback;
+  return upstreamPayload;
+}
+
+function getNextSharedUpstreamKey() {
+  const keys = [...UPSTREAM_KEYS];
+  if (UPSTREAM_KEY) {
+    keys.unshift(UPSTREAM_KEY);
+  }
+  if (keys.length === 0) return null;
+  if (keys.length === 1) return keys[0];
+  const selected = keys[upstreamKeyCursor % keys.length];
+  upstreamKeyCursor = (upstreamKeyCursor + 1) % keys.length;
+  return selected;
+}
+
+function rotateModels(models) {
+  if (models.length <= 1) return [...models];
+  const offset = autoChainCursor % models.length;
+  autoChainCursor = (autoChainCursor + 1) % models.length;
+  return [...models.slice(offset), ...models.slice(0, offset)];
+}
+
+function buildFallbackChain(requested, allowExplicitFallback = false) {
+  if (!requested || requested === "auto") {
+    return rotateModels(AUTO_FALLBACK_CHAIN);
+  }
+
+  if (MODEL_IDS.has(requested) && allowExplicitFallback) {
+    const backups = rotateModels(AUTO_FALLBACK_CHAIN.filter((model) => model !== requested));
+    return [requested, ...backups];
+  }
+
+  return [requested];
+}
+
+function getModelBlockState(userId, model) {
+  if (disabledModelsManager.isDisabled(model)) {
+    return { reason: "disabled", retryAfter: 0 };
+  }
+
+  if (userId) {
+    const retryAfter = rateLimiter.getModelCooldownRemaining(userId, model);
+    if (retryAfter > 0) {
+      return { reason: "user-cooldown", retryAfter };
+    }
+  }
+
+  const globalRetryAfter = rateLimiter.getGlobalCooldownRemaining(model);
+  if (globalRetryAfter > 0) {
+    return { reason: "global-cooldown", retryAfter: globalRetryAfter };
+  }
+
+  return null;
+}
+
+function choosePrimaryModel(requested, userId, allowExplicitFallback = false) {
+  const chain = buildFallbackChain(requested, allowExplicitFallback);
+  for (const model of chain) {
+    if (!getModelBlockState(userId, model)) {
+      return model;
+    }
+  }
+  return chain[0] || null;
+}
+
+function buildUpstreamHeaders(model, userId, extraHeaders = {}) {
+  const normalizedHeaders = { ...extraHeaders };
+  const providedAuthorization = normalizedHeaders.Authorization || normalizedHeaders.authorization;
+  const userApiKey = getUserUpstreamToken(userId);
+  const modelApiKey = apiKeyManager.getNextKey(model);
+  const sharedUpstreamKey = getNextSharedUpstreamKey();
+  const authorization = providedAuthorization
+    || (userApiKey ? `Bearer ${userApiKey}` : null)
+    || (modelApiKey ? `Bearer ${modelApiKey}` : null)
+    || (sharedUpstreamKey ? `Bearer ${sharedUpstreamKey}` : null);
+
+  delete normalizedHeaders.authorization;
+
   const headers = {
     "Content-Type": "application/json",
     Accept: "application/json",
-    ...extraHeaders,
+    ...normalizedHeaders,
   };
 
-  // Check if model has a saved API key
-  const modelApiKey = apiKeyManager.getKey(payload.model);
-  if (modelApiKey) {
-    headers["Authorization"] = `Bearer ${modelApiKey}`;
-  } else if (UPSTREAM_KEY) {
-    headers["Authorization"] = `Bearer ${UPSTREAM_KEY}`;
+  if (authorization) {
+    headers.Authorization = authorization;
   }
 
-  const r = await fetch(`${UPSTREAM}${path}`, {
+  return headers;
+}
+
+function applyModelCooldown(userId, model, scope = "request") {
+  if (userId) {
+    rateLimiter.setCooldown(userId, model);
+  }
+  rateLimiter.setGlobalCooldown(model);
+  const suffix = userId ? ` user ${userId.substring(0, 8)}...` : "";
+  log(`🧊 Cooldown set for ${scope}:${suffix} model=${model}`);
+}
+
+// Call upstream once with a given model. Returns { status, headers, body }.
+async function callUpstream(path, payload, options = {}) {
+  const { userId = null, extraHeaders = {} } = options;
+  const upstreamPayload = sanitizeUpstreamPayload(payload);
+  const headers = buildUpstreamHeaders(upstreamPayload.model, userId, extraHeaders);
+  const r = await upstreamScheduler.run(() => fetch(`${UPSTREAM}${path}`, {
     method: "POST",
     headers,
-    body: JSON.stringify(payload),
-  });
+    body: JSON.stringify(upstreamPayload),
+  }));
   const text = await r.text();
   return { status: r.status, headers: r.headers, body: text };
 }
@@ -232,17 +396,8 @@ async function callUpstream(path, payload, extraHeaders = {}) {
 // fails, we report that failure (can't unwind a partial stream).
 async function callWithFallback(path, payload, userId = null) {
   const requested = payload.model;
-  let chain;
-
-  if (!requested || requested === "auto") {
-    chain = [...AUTO_FALLBACK_CHAIN];
-  } else if (MODEL_IDS.has(requested)) {
-    // Put the requested model first, then append other verified ones as backup.
-    chain = [requested, ...AUTO_FALLBACK_CHAIN.filter((m) => m !== requested)];
-  } else {
-    // Unknown model — pass through as-is, no fallback.
-    chain = [requested];
-  }
+  const allowExplicitFallback = getAllowExplicitFallback(payload);
+  const chain = buildFallbackChain(requested, allowExplicitFallback);
 
   // Check if requested model is disabled
   if (requested && disabledModelsManager.isDisabled(requested)) {
@@ -256,27 +411,23 @@ async function callWithFallback(path, payload, userId = null) {
   }
 
   let last;
+  const skipped = [];
   for (const model of chain) {
-    // Skip disabled models in fallback chain
-    if (disabledModelsManager.isDisabled(model)) {
-      log(`⏭️  Skipping disabled model: ${model}`);
+    const blockState = getModelBlockState(userId, model);
+    if (blockState) {
+      skipped.push({ model, ...blockState });
+      log(`⏭️  Skipping ${blockState.reason} model: ${model}`);
       continue;
     }
 
-    // Skip models that are cooled down for this user
-    if (userId && rateLimiter.isModelCooledDown(userId, model)) {
-      log(`⏭️  Skipping cooled-down model for user ${userId.substring(0, 8)}...: ${model}`);
-      continue;
-    }
-
-    const r = await callUpstream(path, { ...payload, model });
+    const r = await callUpstream(path, { ...payload, model }, { userId });
     last = { ...r, triedModel: model };
     if (r.status >= 200 && r.status < 300) return last;
 
-    // On 429: set per-user cooldown for this model
     if (r.status === 429 && userId) {
-      rateLimiter.setCooldown(userId, model);
-      log(`🧊 Cooldown set for user ${userId.substring(0, 8)}... on model ${model}`);
+      applyModelCooldown(userId, model, "fallback");
+    } else if (r.status === 429) {
+      applyModelCooldown(null, model, "fallback");
     }
 
     // Only fall through on upstream-reported failures. 429 rate-limit also
@@ -289,6 +440,25 @@ async function callWithFallback(path, payload, userId = null) {
 
   // If we get here and have no result, all models failed or were disabled
   if (!last) {
+    const retryAfter = skipped
+      .filter((item) => item.reason !== "disabled" && item.retryAfter > 0)
+      .reduce((min, item) => Math.min(min, item.retryAfter), Number.POSITIVE_INFINITY);
+
+    if (Number.isFinite(retryAfter)) {
+      return {
+        status: 429,
+        headers: new Headers({ "Retry-After": String(retryAfter) }),
+        body: JSON.stringify({
+          error: {
+            message: `All fallback models are cooling down. Try again in ${retryAfter} seconds.`,
+            type: "rate_limit_error",
+            retry_after: retryAfter,
+          }
+        }),
+        triedModel: requested || "auto"
+      };
+    }
+
     return {
       status: 403,
       headers: new Headers(),
@@ -329,48 +499,34 @@ async function handleChatCompletions(req, res) {
 
   if (payload.stream) {
     // Stream straight to upstream with no fallback (see note above).
-    const model = payload.model && MODEL_IDS.has(payload.model)
-      ? payload.model
-      : AUTO_FALLBACK_CHAIN[0];
-
-    // Check if model is disabled
-    if (disabledModelsManager.isDisabled(model)) {
-      log(`🚫 Model ${model} is disabled globally`);
-      logResponse(403, { error: `Model ${model} is disabled` });
-      return json(res, 403, { error: { message: `Model ${model} is disabled` } });
+    const model = choosePrimaryModel(payload.model, userId, getAllowExplicitFallback(payload));
+    if (!model) {
+      logResponse(503, { error: "no models configured" });
+      return json(res, 503, { error: { message: "No models available" } });
     }
 
-    // Check per-user cooldown for streaming
-    if (userId && rateLimiter.isModelCooledDown(userId, model)) {
-      log(`🧊 Model ${model} cooled down for user ${userId.substring(0, 8)}...`);
-      logResponse(429, { error: `Model ${model} cooled down` });
-      return json(res, 429, { error: { message: `Model ${model} is temporarily unavailable. Try another model.` } });
+    const blockState = getModelBlockState(userId, model);
+    if (blockState) {
+      const status = blockState.reason === "disabled" ? 403 : 429;
+      const message = blockState.reason === "disabled"
+        ? `Model ${model} is disabled`
+        : `Model ${model} is temporarily unavailable. Try again in ${blockState.retryAfter} seconds.`;
+      logResponse(status, { error: `${model} ${blockState.reason}` });
+      return json(res, status, { error: { message, retry_after: blockState.retryAfter || undefined } });
     }
 
-    const headers = { "Content-Type": "application/json" };
+    const headers = buildUpstreamHeaders(model, userId);
+    const upstreamPayload = sanitizeUpstreamPayload({ ...payload, model });
 
-    // Check if model has a saved API key
-    const modelApiKey = apiKeyManager.getKey(model);
-    if (modelApiKey) {
-      headers["Authorization"] = `Bearer ${modelApiKey}`;
-      log(`🔑 Using saved API key for ${model}`);
-    } else if (UPSTREAM_KEY) {
-      headers["Authorization"] = `Bearer ${UPSTREAM_KEY}`;
-      log(`🔑 Using UPSTREAM_KEY for ${model}`);
-    } else {
-      log(`⚠️  No API key for ${model} (anonymous mode)`);
-    }
-
-    const upstream = await fetch(`${UPSTREAM}/chat/completions`, {
+    const upstream = await upstreamScheduler.run(() => fetch(`${UPSTREAM}/chat/completions`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ ...payload, model }),
-    });
+      body: JSON.stringify(upstreamPayload),
+    }));
 
     // If upstream returns 429 during stream, set cooldown for this user
-    if (upstream.status === 429 && userId) {
-      rateLimiter.setCooldown(userId, model);
-      log(`🧊 Cooldown set for user ${userId.substring(0, 8)}... on model ${model}`);
+    if (upstream.status === 429) {
+      applyModelCooldown(userId, model, "chat-stream");
     }
 
     res.writeHead(upstream.status, {
@@ -423,6 +579,7 @@ async function handleChatCompletions(req, res) {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "X-Zen-Proxy-Model": r.triedModel,
+    ...(r.headers.get("Retry-After") ? { "Retry-After": r.headers.get("Retry-After") } : {}),
   });
   res.end(r.body);
 }
@@ -453,10 +610,13 @@ async function handleModelSpecificRequest(req, res, modelId) {
     return json(res, 403, { error: { message: `Model ${modelId} is disabled` } });
   }
 
-  // Check per-user cooldown
-  if (userId && rateLimiter.isModelCooledDown(userId, modelId)) {
-    log(`🧊 Model ${modelId} cooled down for user ${userId.substring(0, 8)}...`);
-    return json(res, 429, { error: { message: `Model ${modelId} is temporarily unavailable. Try again later.` } });
+  const blockState = getModelBlockState(userId, modelId);
+  if (blockState) {
+    const status = blockState.reason === "disabled" ? 403 : 429;
+    const message = blockState.reason === "disabled"
+      ? `Model ${modelId} is disabled`
+      : `Model ${modelId} is temporarily unavailable. Try again in ${blockState.retryAfter} seconds.`;
+    return json(res, status, { error: { message, retry_after: blockState.retryAfter || undefined } });
   }
 
   const raw = await readBody(req);
@@ -473,30 +633,16 @@ async function handleModelSpecificRequest(req, res, modelId) {
   log(`📝 Payload model set to: ${modelId}`);
 
   if (payload.stream) {
-    const headers = { "Content-Type": "application/json" };
-
-    // Check if model has a saved API key
-    const modelApiKey = apiKeyManager.getKey(modelId);
-    if (modelApiKey) {
-      headers["Authorization"] = `Bearer ${modelApiKey}`;
-      log(`🔑 Using saved API key for ${modelId}`);
-    } else if (UPSTREAM_KEY) {
-      headers["Authorization"] = `Bearer ${UPSTREAM_KEY}`;
-      log(`🔑 Using UPSTREAM_KEY for ${modelId}`);
-    } else {
-      log(`⚠️  No API key for ${modelId} (anonymous mode)`);
-    }
-
-    const upstream = await fetch(`${UPSTREAM}/chat/completions`, {
+    const headers = buildUpstreamHeaders(modelId, userId);
+    const upstream = await upstreamScheduler.run(() => fetch(`${UPSTREAM}/chat/completions`, {
       method: "POST",
       headers,
-      body: JSON.stringify(payload),
-    });
+      body: JSON.stringify(sanitizeUpstreamPayload(payload)),
+    }));
 
     // Set per-user cooldown on 429
-    if (upstream.status === 429 && userId) {
-      rateLimiter.setCooldown(userId, modelId);
-      log(`🧊 Cooldown set for user ${userId.substring(0, 8)}... on model ${modelId}`);
+    if (upstream.status === 429) {
+      applyModelCooldown(userId, modelId, "model-stream");
     }
 
     res.writeHead(upstream.status, {
@@ -521,13 +667,12 @@ async function handleModelSpecificRequest(req, res, modelId) {
   }
 
   // Non-streaming: call upstream directly (no fallback)
-  const r = await callUpstream("/chat/completions", payload);
+  const r = await callUpstream("/chat/completions", payload, { userId });
   const latency = Date.now() - startTime;
 
   // Set per-user cooldown on 429
-  if (r.status === 429 && userId) {
-    rateLimiter.setCooldown(userId, modelId);
-    log(`🧊 Cooldown set for user ${userId.substring(0, 8)}... on model ${modelId}`);
+  if (r.status === 429) {
+    applyModelCooldown(userId, modelId, "model-direct");
   }
 
   logResponse(r.status, { model: modelId, latency: `${latency}ms` });
@@ -584,51 +729,37 @@ async function handleResponses(req, res) {
 
   log(`🔄 Responses API request: model=${payload.model || "auto"}, stream=${payload.stream || false}, user=${userId?.substring(0, 8) || "anon"}`);
 
-  // Check for user token (X-User-Id header or resolved user)
-  let userApiKey = null;
-  if (userId && userTokenManager.userExists(userId)) {
-    userApiKey = userTokenManager.getToken(userId, "opencode");
-  }
-
   // Convert Responses API format to Chat Completions format
   const completionsPayload = responsesToCompletions(payload);
 
   if (payload.stream) {
-    const model = completionsPayload.model && MODEL_IDS.has(completionsPayload.model)
-      ? completionsPayload.model
-      : AUTO_FALLBACK_CHAIN[0];
-
-    if (disabledModelsManager.isDisabled(model)) {
-      log(`🚫 Model ${model} is disabled globally`);
-      return json(res, 403, { error: { message: `Model ${model} is disabled` } });
+    const model = choosePrimaryModel(completionsPayload.model, userId, getAllowExplicitFallback(payload));
+    if (!model) {
+      return json(res, 503, { error: { message: "No models available" } });
     }
 
-    const headers = { "Content-Type": "application/json" };
-
-    // Priority: user token > model API key > upstream key
-    if (userApiKey) {
-      headers["Authorization"] = `Bearer ${userApiKey}`;
-      log(`🔑 Using user token for ${model}`);
-    } else {
-      const modelApiKey = apiKeyManager.getKey(model);
-      if (modelApiKey) {
-        headers["Authorization"] = `Bearer ${modelApiKey}`;
-      } else if (UPSTREAM_KEY) {
-        headers["Authorization"] = `Bearer ${UPSTREAM_KEY}`;
-      }
+    const blockState = getModelBlockState(userId, model);
+    if (blockState) {
+      const status = blockState.reason === "disabled" ? 403 : 429;
+      const message = blockState.reason === "disabled"
+        ? `Model ${model} is disabled`
+        : `Model ${model} is temporarily unavailable. Try again in ${blockState.retryAfter} seconds.`;
+      return json(res, status, { error: { message, retry_after: blockState.retryAfter || undefined } });
     }
 
-    const upstream = await fetch(`${UPSTREAM}/chat/completions`, {
+    const headers = buildUpstreamHeaders(model, userId);
+    const upstreamPayload = sanitizeUpstreamPayload({ ...completionsPayload, model, stream: true });
+
+    const upstream = await upstreamScheduler.run(() => fetch(`${UPSTREAM}/chat/completions`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ ...completionsPayload, model, stream: true }),
-    });
+      body: JSON.stringify(upstreamPayload),
+    }));
 
     if (upstream.status >= 400) {
       // Set per-user cooldown on 429
-      if (upstream.status === 429 && userId) {
-        rateLimiter.setCooldown(userId, model);
-        log(`🧊 Cooldown set for user ${userId.substring(0, 8)}... on model ${model}`);
+      if (upstream.status === 429) {
+        applyModelCooldown(userId, model, "responses-stream");
       }
       const errBody = await upstream.text();
       const latency = Date.now() - startTime;
@@ -688,13 +819,6 @@ async function handleResponses(req, res) {
   }
 
   // Non-streaming: use fallback chain
-  // Override auth if user has their own token
-  const extraHeaders = {};
-  if (userApiKey) {
-    extraHeaders["Authorization"] = `Bearer ${userApiKey}`;
-    log(`🔑 Using user token`);
-  }
-
   const r = await callWithFallback("/chat/completions", completionsPayload, userId);
   const latency = Date.now() - startTime;
 
@@ -719,7 +843,11 @@ async function handleResponses(req, res) {
 
   if (r.status >= 400) {
     logResponse(r.status, { model: r.triedModel, latency: `${latency}ms` });
-    res.writeHead(r.status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+    res.writeHead(r.status, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      ...(r.headers.get("Retry-After") ? { "Retry-After": r.headers.get("Retry-After") } : {}),
+    });
     return res.end(r.body);
   }
 
@@ -869,9 +997,12 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         service: "zen-proxy",
         upstream: UPSTREAM,
-        upstream_auth: UPSTREAM_KEY ? "key-set" : "anonymous",
+        upstream_auth: (UPSTREAM_KEY || UPSTREAM_KEYS.length > 0) ? "key-set" : "anonymous",
+        upstream_key_pool_size: (UPSTREAM_KEY ? 1 : 0) + UPSTREAM_KEYS.length,
+        explicit_model_fallback: ALLOW_EXPLICIT_MODEL_FALLBACK,
         tunnel_url: TUNNEL_URL || null,
         models: AUTO_FALLBACK_CHAIN,
+        queue: upstreamScheduler.getStats(),
         endpoints: [
           "/v1/models",
           "/v1/chat/completions",
@@ -922,8 +1053,9 @@ const server = http.createServer(async (req, res) => {
         }
 
         apiKeyManager.setKey(modelId, payload.key);
-        log(`✅ API key saved for ${modelId}`);
-        return json(res, 200, { success: true });
+        const keyCount = apiKeyManager.getKeys(modelId).length;
+        log(`✅ API key saved for ${modelId} (${keyCount} key${keyCount === 1 ? "" : "s"})`);
+        return json(res, 200, { success: true, keys: keyCount });
       }
 
       if (req.method === "DELETE") {
@@ -1210,10 +1342,15 @@ const server = http.createServer(async (req, res) => {
       if (!userTokenManager.userExists(userId)) {
         return json(res, 404, { error: { message: "user not found" } });
       }
+      const savedLimit = userTokenManager.getRateLimit(userId);
+      if (savedLimit) {
+        rateLimiter.setUserLimit(userId, savedLimit);
+      }
       const limit = rateLimiter.getUserLimit(userId);
       const remaining = rateLimiter.getRemainingRequests(userId);
       const models = rateLimiter.getUserModelStats(userId);
-      return json(res, 200, { user_id: userId, limit, remaining, models });
+      const global_models = rateLimiter.getGlobalModelStats();
+      return json(res, 200, { user_id: userId, limit, remaining, models, global_models });
     }
     // Get current user's own rate limit status (from session)
     if (url.pathname === "/api/my/rate-limit" && req.method === "GET") {
@@ -1221,14 +1358,28 @@ const server = http.createServer(async (req, res) => {
       if (!userId) {
         return json(res, 401, { error: { message: "Not authenticated" } });
       }
+      const savedLimit = userTokenManager.getRateLimit(userId);
+      if (savedLimit) {
+        rateLimiter.setUserLimit(userId, savedLimit);
+      }
       const limit = rateLimiter.getUserLimit(userId);
       const remaining = rateLimiter.getRemainingRequests(userId);
       const models = rateLimiter.getUserModelStats(userId);
-      return json(res, 200, { user_id: userId, limit, remaining, models });
+      const global_models = rateLimiter.getGlobalModelStats();
+      return json(res, 200, { user_id: userId, limit, remaining, models, global_models });
     }
     logResponse(404, { error: `no route: ${req.method} ${url.pathname}` });
     json(res, 404, { error: { message: `no route: ${req.method} ${url.pathname}` } });
   } catch (err) {
+    if (err?.message === "Upstream queue is full") {
+      logResponse(503, { error: "upstream queue full" });
+      return json(res, 503, {
+        error: {
+          message: "Proxy is busy, upstream queue is full. Try again shortly.",
+          type: "server_overloaded",
+        }
+      });
+    }
     log("❌ Server error:", err);
     json(res, 500, { error: { message: String(err?.message || err) } });
   }
@@ -1237,8 +1388,10 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   log(`zen-proxy listening on http://${HOST}:${PORT}`);
   log(`instance: ${instanceData.id}`);
-  log(`upstream: ${UPSTREAM} (${UPSTREAM_KEY ? "with key" : "anonymous"})`);
+  log(`upstream: ${UPSTREAM} (${(UPSTREAM_KEY || UPSTREAM_KEYS.length > 0) ? "with key" : "anonymous"})`);
   log(`auto-chain: ${AUTO_FALLBACK_CHAIN.join(" -> ")}`);
+  log(`explicit-model-fallback: ${ALLOW_EXPLICIT_MODEL_FALLBACK ? "enabled" : "disabled"}`);
+  log(`upstream queue: concurrency=${UPSTREAM_MAX_CONCURRENCY}, size=${UPSTREAM_QUEUE_SIZE}`);
 
   // Show dashboard password
   if (process.env.DASHBOARD_PASSWORD) {
@@ -1251,9 +1404,9 @@ server.listen(PORT, HOST, () => {
   if (!PROXY_KEY) {
     log(`⚠️  PROXY_KEY not set — API endpoints are open without authentication`);
   }
-  if (!UPSTREAM_KEY) {
+  if (!UPSTREAM_KEY && UPSTREAM_KEYS.length === 0) {
     log(`ℹ️  No OPENCODE_API_KEY — anonymous mode (upstream rate-limited by IP)`);
   } else {
-    log(`🔑 OPENCODE_API_KEY set — ensure each instance uses a unique key`);
+    log(`🔑 Upstream key pool size: ${(UPSTREAM_KEY ? 1 : 0) + UPSTREAM_KEYS.length}`);
   }
 });

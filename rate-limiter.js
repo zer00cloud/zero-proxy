@@ -1,11 +1,13 @@
 const DEFAULT_LIMIT = Number(process.env.RATE_LIMIT_PER_MIN || 30);
-const COOLDOWN_MS = 60000;
+const COOLDOWN_MS = Number(process.env.MODEL_COOLDOWN_MS || 60000);
+const GLOBAL_COOLDOWN_MS = Number(process.env.GLOBAL_MODEL_COOLDOWN_MS || COOLDOWN_MS);
 const WINDOW_MS = 60000;
 const CLEANUP_INTERVAL = 300000;
 
 function createRateLimiter() {
   // Map<userId, { requests: number[], cooldowns: Map<model, expiry>, limit: number|null, modelRequests: Map<model, number[]> }>
   const users = new Map();
+  const globalCooldowns = new Map();
 
   function getUser(userId) {
     if (!users.has(userId)) {
@@ -55,15 +57,37 @@ function createRateLimiter() {
     user.cooldowns.set(model, Date.now() + durationMs);
   }
 
-  function isModelCooledDown(userId, model) {
+  function getModelCooldownRemaining(userId, model) {
     const user = getUser(userId);
     const expiry = user.cooldowns.get(model);
-    if (!expiry) return false;
+    if (!expiry) return 0;
     if (Date.now() >= expiry) {
       user.cooldowns.delete(model);
-      return false;
+      return 0;
     }
-    return true;
+    return Math.max(1, Math.ceil((expiry - Date.now()) / 1000));
+  }
+
+  function isModelCooledDown(userId, model) {
+    return getModelCooldownRemaining(userId, model) > 0;
+  }
+
+  function setGlobalCooldown(model, durationMs = GLOBAL_COOLDOWN_MS) {
+    globalCooldowns.set(model, Date.now() + durationMs);
+  }
+
+  function getGlobalCooldownRemaining(model) {
+    const expiry = globalCooldowns.get(model);
+    if (!expiry) return 0;
+    if (Date.now() >= expiry) {
+      globalCooldowns.delete(model);
+      return 0;
+    }
+    return Math.max(1, Math.ceil((expiry - Date.now()) / 1000));
+  }
+
+  function isModelGloballyCooledDown(model) {
+    return getGlobalCooldownRemaining(model) > 0;
   }
 
   function setUserLimit(userId, limit) {
@@ -87,18 +111,38 @@ function createRateLimiter() {
       user.modelRequests.set(model, recent);
       const cooldownExpiry = user.cooldowns.get(model);
       const cooledDown = cooldownExpiry && now < cooldownExpiry;
+      const globalCooldownRemaining = getGlobalCooldownRemaining(model);
       stats[model] = {
         requests_in_window: recent.length,
         cooled_down: !!cooledDown,
         cooldown_remaining: cooledDown ? Math.ceil((cooldownExpiry - now) / 1000) : 0,
+        globally_cooled_down: globalCooldownRemaining > 0,
+        global_cooldown_remaining: globalCooldownRemaining,
       };
     }
 
     return stats;
   }
 
+  function getGlobalModelStats() {
+    const stats = {};
+    for (const model of globalCooldowns.keys()) {
+      const remaining = getGlobalCooldownRemaining(model);
+      if (remaining > 0) {
+        stats[model] = {
+          globally_cooled_down: true,
+          global_cooldown_remaining: remaining,
+        };
+      }
+    }
+    return stats;
+  }
+
   function cleanup() {
     const now = Date.now();
+    for (const [model, expiry] of globalCooldowns.entries()) {
+      if (now >= expiry) globalCooldowns.delete(model);
+    }
     for (const [userId, user] of users.entries()) {
       user.requests = user.requests.filter(t => now - t < WINDOW_MS);
       for (const [model, expiry] of user.cooldowns.entries()) {
@@ -126,10 +170,15 @@ function createRateLimiter() {
     getRemainingRequests,
     getRetryAfter,
     setCooldown,
+    getModelCooldownRemaining,
     isModelCooledDown,
+    setGlobalCooldown,
+    getGlobalCooldownRemaining,
+    isModelGloballyCooledDown,
     setUserLimit,
     getUserLimit,
     getUserModelStats,
+    getGlobalModelStats,
     cleanup,
   };
 }

@@ -5,6 +5,13 @@ OpenAI-compatible proxy for the free models hosted on OpenCode Zen
 and get `minimax-m2.5-free`, `big-pickle`, `nemotron-3-super-free` with
 automatic fallback when one is down or rate-limited.
 
+`auto` traffic is rotated across the verified models, and any model that
+returns upstream `429` is cooled down briefly so the proxy does not keep
+hitting the same hot path over and over.
+
+Explicit model requests now stay on the exact model by default. If you want
+cross-model fallback for a specific request, send `allow_fallback: true`.
+
 ## Run
 
     node server.js
@@ -18,9 +25,13 @@ Default listens on `0.0.0.0:8787`.
       -H "Content-Type: application/json" \
       -d '{"model":"auto","messages":[{"role":"user","content":"hi"}]}'
 
-- `model: "auto"` (or omitted) — tries the fallback chain in order.
-- `model: "minimax-m2.5-free"` — tries that first, then falls back.
+- `model: "auto"` (or omitted) — rotates through the verified fallback chain.
+- `model: "minimax-m2.5-free"` — stays on that exact model by default.
 - Streaming (`stream: true`) is proxied straight through, no retry.
+- If a user has their own OpenCode token saved, the proxy prefers that token
+  over the shared instance key.
+- Shared upstream keys can be pooled with `OPENCODE_API_KEYS`, and per-model
+  keys can also be saved as comma-separated or newline-separated lists.
 
 ## Endpoints
 
@@ -31,7 +42,11 @@ Default listens on `0.0.0.0:8787`.
 ## Env
 
 See `.env.example`. Set `OPENCODE_API_KEY` to unlock the full free catalog.
-Set `PROXY_KEY` to require clients to authenticate.
+Set `PROXY_KEY` to require clients to authenticate. Tune
+`MODEL_COOLDOWN_MS` and `GLOBAL_MODEL_COOLDOWN_MS` if you want the proxy to
+back off longer after upstream rate limits. Tune
+`UPSTREAM_MAX_CONCURRENCY` and `UPSTREAM_QUEUE_SIZE` if you want to smooth
+bursts before they hit upstream.
 
 
 
@@ -79,4 +94,3 @@ Set `PROXY_KEY` to require clients to authenticate.
   Untuk n8n OpenAI node:
   - Base URL: http://<IP>:8787/v1
   - API Key: isi sembarang (misal sk-dummy) atau kosong
-
