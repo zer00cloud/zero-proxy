@@ -10,6 +10,20 @@ const API_KEYS_FILE = "./data/api-keys.json";
  */
 function createAPIKeyManager() {
   let apiKeys = {};
+  const cursors = new Map();
+
+  function normalizeKeys(value) {
+    if (Array.isArray(value)) {
+      return [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))];
+    }
+    if (typeof value !== "string") return [];
+    return [...new Set(
+      value
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )];
+  }
 
   // Load existing API keys from file
   function load() {
@@ -45,23 +59,45 @@ function createAPIKeyManager() {
 
   // Set API key for a model
   function setKey(modelId, key) {
-    apiKeys[modelId] = key;
+    const keys = normalizeKeys(key);
+    if (keys.length <= 1) {
+      apiKeys[modelId] = keys[0] || "";
+    } else {
+      apiKeys[modelId] = keys;
+    }
+    cursors.delete(modelId);
     save();
   }
 
   // Get API key for a model
   function getKey(modelId) {
-    return apiKeys[modelId] || null;
+    const keys = getKeys(modelId);
+    return keys[0] || null;
+  }
+
+  function getKeys(modelId) {
+    return normalizeKeys(apiKeys[modelId]);
+  }
+
+  function getNextKey(modelId) {
+    const keys = getKeys(modelId);
+    if (keys.length === 0) return null;
+    if (keys.length === 1) return keys[0];
+    const current = cursors.get(modelId) || 0;
+    const nextKey = keys[current % keys.length];
+    cursors.set(modelId, (current + 1) % keys.length);
+    return nextKey;
   }
 
   // Check if API key exists for a model
   function hasKey(modelId) {
-    return !!apiKeys[modelId];
+    return getKeys(modelId).length > 0;
   }
 
   // Delete API key for a model
   function deleteKey(modelId) {
     delete apiKeys[modelId];
+    cursors.delete(modelId);
     save();
   }
 
@@ -71,6 +107,8 @@ function createAPIKeyManager() {
   return {
     setKey,
     getKey,
+    getKeys,
+    getNextKey,
     hasKey,
     deleteKey,
   };

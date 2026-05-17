@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>ProxyZero - Login</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist:wght@400;500;600&display=swap" rel="stylesheet"/>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface": "#12131a",
+                        "surface-container": "#1e1f26",
+                        "surface-container-low": "#1a1b22",
+                        "surface-container-high": "#292931",
+                        "on-surface": "#e3e1ec",
+                        "on-surface-variant": "#c7c4d7",
+                        "primary": "#c0c1ff",
+                        "primary-container": "#8083ff",
+                        "on-primary": "#1000a9",
+                        "outline": "#908fa0",
+                        "outline-variant": "#464554",
+                        "error": "#ffb4ab",
+                        "background": "#12131a",
+                        "on-background": "#e3e1ec",
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fade-in 0.3s ease-out; }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .animate-shake { animation: shake 0.3s ease-in-out; }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex items-center justify-center font-[Inter]">
+    <div class="w-full max-w-sm mx-auto px-6 animate-fade-in">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-primary mb-2">ProxyZero</h1>
+            <p class="text-on-surface-variant text-sm">Enter password to access the dashboard</p>
+        </div>
+
+        <div class="bg-surface-container border border-outline-variant/20 rounded-xl p-6">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-on-surface-variant mb-1.5" for="password">Password</label>
+                    <input
+                        id="password"
+                        type="password"
+                        placeholder="Enter password"
+                        autocomplete="current-password"
+                        class="w-full px-3 py-2.5 bg-surface-container-low border border-outline-variant/30 rounded-lg text-on-surface placeholder-outline focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-sm"
+                        onkeydown="if(event.key==='Enter')doLogin()"
+                    />
+                </div>
+                <div id="password-hint" class="hidden bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2">
+                    <span class="text-xs text-on-surface-variant">Password: </span>
+                    <code id="hint-value" class="text-xs text-primary font-mono"></code>
+                </div>
+                <div id="error-msg" class="hidden text-error text-xs"></div>
+                <button
+                    id="login-btn"
+                    onclick="doLogin()"
+                    class="w-full py-2.5 bg-primary-container text-white font-medium rounded-lg hover:opacity-90 transition-opacity text-sm cursor-pointer"
+                >
+                    Login
+                </button>
+            </div>
+        </div>
+
+        <p class="text-center text-on-surface-variant/50 text-xs mt-6">Session expires after 24 hours</p>
+    </div>
+
+    <script>
+        const SHOW_HINT = {{SHOW_HINT}};
+        const PASSWORD_HINT = "{{PASSWORD_HINT}}";
+
+        // Show password hint if configured
+        if (SHOW_HINT && PASSWORD_HINT) {
+            document.getElementById('password-hint').classList.remove('hidden');
+            document.getElementById('hint-value').textContent = PASSWORD_HINT;
+            document.getElementById('password').value = PASSWORD_HINT;
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('error-msg');
+            el.textContent = msg;
+            el.classList.remove('hidden');
+            el.parentElement.classList.add('animate-shake');
+            setTimeout(() => el.parentElement.classList.remove('animate-shake'), 300);
+        }
+
+        function hideError() {
+            document.getElementById('error-msg').classList.add('hidden');
+        }
+
+        async function doLogin() {
+            hideError();
+            const password = document.getElementById('password').value.trim();
+            if (!password) {
+                showError('Password is required');
+                return;
+            }
+
+            const btn = document.getElementById('login-btn');
+            btn.disabled = true;
+            btn.textContent = 'Logging in...';
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password }),
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    localStorage.setItem('user_id', data.user_id);
+                    localStorage.setItem('session', data.session);
+                    window.location.href = '/dashboard';
+                } else {
+                    showError(data.error?.message || 'Login failed');
+                }
+            } catch (err) {
+                showError('Connection error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Login';
+            }
+        }
+
+        // Auto-check if already logged in
+        (async function() {
+            try {
+                const res = await fetch('/api/auth/me');
+                if (res.ok) {
+                    window.location.href = '/dashboard';
+                }
+            } catch {}
+            document.getElementById('password').focus();
+        })();
+    </script>
+</body>
+</html>
